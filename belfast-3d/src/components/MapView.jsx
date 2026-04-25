@@ -12,10 +12,13 @@ import { useTrafficData } from '../hooks/useTrafficData'
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
-// Deck.gl overlay that renders inside MapLibre's GL context
-function DeckGLOverlay(props) {
-  const overlay = useControl(() => new MapboxOverlay(props))
-  overlay.setProps(props)
+// Deck.gl overlay — only renders when zoomed in enough for Mercator alignment
+function DeckGLOverlay({ layers, getTooltip, zoom }) {
+  // At low zoom, globe projection distorts Deck.gl coordinates
+  // Only render layers when zoomed in enough (zoom >= 8 is flat Mercator)
+  const visibleLayers = zoom >= 7 ? layers : []
+  const overlay = useControl(() => new MapboxOverlay({ layers: visibleLayers, getTooltip }))
+  overlay.setProps({ layers: visibleLayers, getTooltip })
   return null
 }
 
@@ -281,7 +284,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
       <DeckGLOverlay
         layers={deckLayers}
         getTooltip={getTooltip}
-        interleaved
+        zoom={viewState.zoom}
       />
     </Map>
   )
