@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 
-const TOMTOM_KEY = import.meta.env.VITE_TOMTOM_KEY || 'jWkgmfWhyuCxtqRX0HrW6Fv91E55ydMm'
+const TOMTOM_KEY = import.meta.env.VITE_TOMTOM_KEY || ''
 const TOMTOM_FLOW = 'https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json'
 
 const VEHICLE_COUNT = 1200
