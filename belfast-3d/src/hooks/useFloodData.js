@@ -153,6 +153,71 @@ export function useFloodData(seaLevelRise = 0) {
       })
     }
 
+    // Area-based coastal/tidal flood zones (low-lying reclaimed land)
+    const AREA_ZONES = [
+      {
+        name: 'Titanic Quarter — Queens Island',
+        risk: 'high', source: 'Tidal/Coastal', base: 1.0,
+        coords: [
+          [-5.9105, 54.6056], [-5.9050, 54.6057], [-5.9000, 54.6070],
+          [-5.8960, 54.6090], [-5.8940, 54.6110], [-5.8960, 54.6130],
+          [-5.9010, 54.6130], [-5.9060, 54.6110], [-5.9100, 54.6090],
+          [-5.9120, 54.6075], [-5.9105, 54.6056],
+        ],
+      },
+      {
+        name: 'Belfast Harbour — Docklands',
+        risk: 'high', source: 'Tidal/Coastal', base: 0.5,
+        coords: [
+          [-5.9190, 54.6110], [-5.9160, 54.6120], [-5.9160, 54.6155],
+          [-5.9170, 54.6180], [-5.9130, 54.6200], [-5.9090, 54.6230],
+          [-5.9050, 54.6260], [-5.9000, 54.6290], [-5.8960, 54.6290],
+          [-5.8920, 54.6280], [-5.8890, 54.6310], [-5.8870, 54.6280],
+          [-5.8900, 54.6230], [-5.8940, 54.6190], [-5.8970, 54.6160],
+          [-5.9000, 54.6140], [-5.9050, 54.6120], [-5.9100, 54.6110],
+          [-5.9150, 54.6105], [-5.9190, 54.6110],
+        ],
+      },
+      {
+        name: 'North Foreshore — Dargan Road',
+        risk: 'medium', source: 'Tidal', base: 1.8,
+        coords: [
+          [-5.9185, 54.6300], [-5.9130, 54.6310], [-5.9090, 54.6330],
+          [-5.9060, 54.6360], [-5.9090, 54.6380], [-5.9140, 54.6370],
+          [-5.9190, 54.6350], [-5.9210, 54.6320], [-5.9185, 54.6300],
+        ],
+      },
+      {
+        name: 'Sydenham — Belfast City Airport',
+        risk: 'low', source: 'Tidal', base: 3.0,
+        coords: [
+          [-5.8870, 54.6090], [-5.8820, 54.6110], [-5.8770, 54.6140],
+          [-5.8720, 54.6170], [-5.8700, 54.6200], [-5.8730, 54.6220],
+          [-5.8780, 54.6200], [-5.8830, 54.6170], [-5.8870, 54.6140],
+          [-5.8890, 54.6110], [-5.8870, 54.6090],
+        ],
+      },
+    ]
+
+    for (const zone of AREA_ZONES) {
+      if (zone.base > 3 + seaLevelRise * 1.5) continue
+      const effectiveRisk = seaLevelRise > zone.base ? 'high' :
+        seaLevelRise > zone.base * 0.5 ? 'medium' : zone.risk
+      features.push({
+        type: 'Feature',
+        properties: {
+          name: zone.name,
+          risk_level: effectiveRisk,
+          source: `DfI Rivers — ${zone.source} flood risk`,
+          base_elevation: zone.base,
+          flood_depth: seaLevelRise > 0
+            ? `${Math.max(0, seaLevelRise - zone.base + 1.5).toFixed(1)}m` : null,
+          scenario: seaLevelRise === 0 ? 'Present day' : `+${seaLevelRise}m sea level`,
+        },
+        geometry: { type: 'Polygon', coordinates: [zone.coords] },
+      })
+    }
+
     return { type: 'FeatureCollection', features }
   }, [seaLevelRise, apsfr, rivers])
 
