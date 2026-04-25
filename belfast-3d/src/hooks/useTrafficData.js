@@ -283,7 +283,7 @@ export function useTrafficData() {
           const pos = getPosition(vehicles[i], roads)
           if (pos) {
             pts.push({
-              position: [pos[0], pos[1], 0],
+              position: [pos[0], pos[1]],
               speed: vehicles[i].realSpeed,
               congestion: vehicles[i].congestion,
               roadType: vehicles[i].roadType,

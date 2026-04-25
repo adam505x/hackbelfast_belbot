@@ -9,27 +9,74 @@ import { useGridData } from '../hooks/useGridData'
 import { useDecayData } from '../hooks/useDecayData'
 import { useDataCentreData } from '../hooks/useDataCentreData'
 import { useTrafficData } from '../hooks/useTrafficData'
+import { useUDIData } from '../hooks/useUDIData'
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
-// Deck.gl overlay — only renders when zoomed in enough for Mercator alignment
-function DeckGLOverlay({ layers, getTooltip, zoom }) {
-  const visibleLayers = zoom >= 10 ? layers : []
-  const overlay = useControl(() => new MapboxOverlay({ layers: visibleLayers, getTooltip }))
-  overlay.setProps({ layers: visibleLayers, getTooltip })
+// Globe stays at all zooms — fade Deck.gl layers in once the overlay
+// aligns with the globe surface (zoom 10-11, where town names appear)
+const FADE_IN_START = 10
+const FADE_IN_END = 11
+
+function DeckGLOverlay({ layers, getTooltip }) {
+  const overlay = useControl(() => new MapboxOverlay({ layers, getTooltip }))
+  overlay.setProps({ layers, getTooltip })
   return null
 }
 
-export default function MapView({ viewState, onViewStateChange, layers, seaLevelRise, onFeatureClick }) {
+export default function MapView({ viewState, onViewStateChange, layers, seaLevelRise, udiPeriod, onFeatureClick }) {
   const floodData = useFloodData(seaLevelRise)
   const buildingData = useBuildingData()
   const gridData = useGridData()
   const decayData = useDecayData()
   const dataCentreData = useDataCentreData()
   const trafficData = useTrafficData()
+  const { data: udiData } = useUDIData(udiPeriod)
 
   const deckLayers = useMemo(() => {
+    // Hide all Deck.gl layers when in globe view
+    if (viewState.zoom < FADE_IN_START) return []
+
+    // Compute fade factor for smooth transition
+    const fade = viewState.zoom >= FADE_IN_END
+      ? 1
+      : (viewState.zoom - FADE_IN_START) / (FADE_IN_END - FADE_IN_START)
+
     const result = []
+
+    // UDI Overlay — red gradient by decay score
+    if (layers.udi?.enabled && udiData) {
+      result.push(
+        new GeoJsonLayer({
+          id: 'udi-layer',
+          data: udiData,
+          filled: true,
+          stroked: true,
+          extruded: false,
+          opacity: layers.udi.opacity * fade,
+          getFillColor: f => {
+            const score = f.properties.udi ?? 0.5
+            // Red gradient: low decay = transparent green-ish, high decay = solid red
+            if (score < 0.2) return [40, 180, 80, 60]
+            if (score < 0.35) return [120, 200, 60, 90]
+            if (score < 0.45) return [240, 200, 40, 120]
+            if (score < 0.55) return [240, 140, 30, 150]
+            if (score < 0.65) return [220, 60, 30, 180]
+            return [180, 20, 20, 220]
+          },
+          getLineColor: [255, 255, 255, 40],
+          getLineWidth: 1,
+          pickable: true,
+          updateTriggers: {
+            getFillColor: [udiPeriod],
+          },
+          onClick: ({ object }) => object && onFeatureClick({
+            type: 'udi',
+            properties: object.properties,
+          }),
+        })
+      )
+    }
 
     // 3D Buildings
     if (layers.buildings.enabled && buildingData) {
@@ -39,7 +86,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           data: buildingData,
           extruded: true,
           wireframe: false,
-          opacity: layers.buildings.opacity,
+          opacity: layers.buildings.opacity * fade,
           getElevation: f => f.properties.height || f.properties.building_levels * 3.5 || 12,
           getFillColor: f => {
             const h = f.properties.height || 12
@@ -64,7 +111,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           data: floodData,
           filled: true,
           stroked: true,
-          opacity: layers.flood.opacity,
+          opacity: layers.flood.opacity * fade,
           getFillColor: f => {
             const risk = f.properties.risk_level || 'medium'
             if (risk === 'high') return [220, 38, 38, 160]
@@ -105,7 +152,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           },
           widthMinPixels: 1,
           widthScale: 1,
-          opacity: layers.grid.opacity,
+          opacity: layers.grid.opacity * fade,
           pickable: true,
           onClick: ({ object }) => object && onFeatureClick({
             type: 'power_line',
@@ -137,7 +184,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           },
           getLineColor: [30, 30, 30, 200],
           getLineWidth: 1,
-          opacity: layers.grid.opacity,
+          opacity: layers.grid.opacity * fade,
           pickable: true,
           onClick: ({ object }) => object && onFeatureClick({
             type: 'substation',
@@ -155,7 +202,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           data: decayData,
           filled: true,
           stroked: true,
-          opacity: layers.decay.opacity,
+          opacity: layers.decay.opacity * fade,
           getFillColor: f => {
             const score = f.properties.deprivation_score || 0.5
             const r = Math.floor(180 + score * 75)
@@ -190,7 +237,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
             return [139, 92, 246, Math.floor(150 + score * 105)]
           },
           getElevation: d => (d.score || 0.5) * 200,
-          opacity: layers.datacentre.opacity,
+          opacity: layers.datacentre.opacity * fade,
           pickable: true,
           onClick: ({ object }) => object && onFeatureClick({
             type: 'datacentre',
@@ -207,8 +254,10 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           id: 'traffic-layer',
           data: trafficData,
           getPosition: d => d.position,
-          getRadius: 3,
-          radiusUnits: 'pixels',
+          getRadius: 5,
+          radiusUnits: 'meters',
+          radiusMinPixels: 1.5,
+          radiusMaxPixels: 6,
           billboard: false,
           antialiasing: false,
           getFillColor: d => {
@@ -219,8 +268,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
             if (c < 0.7) return [255, 150, 30, 220]
             return [255, 60, 60, 230]
           },
-          opacity: layers.traffic.opacity ?? 0.9,
-          parameters: { depthTest: false },
+          opacity: (layers.traffic.opacity ?? 0.9) * fade,
           updateTriggers: {
             getPosition: trafficData,
             getFillColor: trafficData,
@@ -230,7 +278,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
     }
 
     return result
-  }, [layers, floodData, buildingData, gridData, decayData, dataCentreData, trafficData, seaLevelRise, onFeatureClick])
+  }, [viewState.zoom, layers, floodData, buildingData, gridData, decayData, dataCentreData, trafficData, udiData, udiPeriod, seaLevelRise, onFeatureClick])
 
   const onMove = useCallback(evt => {
     onViewStateChange(evt.viewState)
@@ -239,6 +287,43 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
   const getTooltip = useCallback(({ object }) => {
     if (!object) return null
     const p = object.properties || object
+
+    // UDI tooltip
+    if (p.udi != null && p.SOA_NAME) {
+      const pct = (v) => (v * 100).toFixed(0)
+      const lines = [
+        `<strong>${p.SOA_NAME}</strong>`,
+        `<span style="font-size:11px;color:#94a3b8">${p.SOA_CODE}</span>`,
+        `<br/><strong style="color:#f87171">UDI Score: ${pct(p.udi)}%</strong>`,
+        `<div style="margin:4px 0;height:6px;background:#1e293b;border-radius:3px;overflow:hidden">` +
+          `<div style="width:${pct(p.udi)}%;height:100%;background:linear-gradient(90deg,#22c55e,#eab308,#ef4444);border-radius:3px"></div></div>`,
+        `Demographic: ${pct(p.demographic)}%`,
+        `Crime: ${pct(p.crime)}%`,
+        `Dereliction: ${pct(p.dereliction)}%`,
+        `Housing: ${pct(p.housing)}%`,
+      ]
+      if (p.pop_2001) lines.push(`<br/>Pop: ${p.pop_2001?.toLocaleString()} (01) → ${p.pop_2011?.toLocaleString()} (11) → ${p.pop_2021?.toLocaleString()} (21)`)
+      if (p.mdm_rank) lines.push(`NIMDM Rank: ${p.mdm_rank}/890`)
+      if (p.listed_buildings) lines.push(`Listed Buildings: ${p.listed_buildings}`)
+      if (p.harni_sites) lines.push(`Heritage at Risk: ${p.harni_sites}`)
+      // Rent estimate for current period
+      const rentKey = `rent_${udiPeriod}`
+      if (p[rentKey]) lines.push(`<br/>Est. Rent: £${p[rentKey]}/mo (${udiPeriod})`)
+      // Postcodes
+      if (p.postcodes) lines.push(`<span style="font-size:10px;color:#64748b">Postcodes: ${p.postcodes}</span>`)
+      return {
+        html: `<div style="padding:10px;max-width:280px;line-height:1.5">${lines.join('<br/>')}</div>`,
+        style: {
+          backgroundColor: '#0f172a',
+          color: '#e2e8f0',
+          borderRadius: '10px',
+          fontSize: '13px',
+          border: '1px solid #334155',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        }
+      }
+    }
+
     const lines = [`<strong>${p.name || p.type || p.building || 'Feature'}</strong>`]
     if (p.source) lines.push(`Source: ${p.source}`)
     if (p.voltage) lines.push(`Voltage: ${p.voltage}kV`)
@@ -261,7 +346,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
         border: '1px solid #334155',
       }
     }
-  }, [])
+  }, [udiPeriod])
 
   return (
     <Map
@@ -269,10 +354,12 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
       onMove={onMove}
       mapStyle={MAP_STYLE}
       projection="globe"
+      renderWorldCopies={false}
+      maxTileCacheSize={200}
       fog={{
         color: '#0f172a',
         'high-color': '#1e293b',
-        'horizon-blend': 0.05,
+        'horizon-blend': 0.02,
         'space-color': '#0a0e1a',
         'star-intensity': 0.6,
       }}
@@ -282,7 +369,6 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
       <DeckGLOverlay
         layers={deckLayers}
         getTooltip={getTooltip}
-        zoom={viewState.zoom}
       />
     </Map>
   )

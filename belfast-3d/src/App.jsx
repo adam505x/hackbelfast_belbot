@@ -7,11 +7,12 @@ import Legend from './components/Legend'
 import AIChatPanel from './components/AIChatPanel'
 
 const INITIAL_LAYERS = {
-  flood: { enabled: true, label: '🌊 Flood Risk', color: '#3b82f6', opacity: 0.6 },
+  udi: { enabled: true, label: '📊 Urban Decay Index', color: '#ef4444', opacity: 0.55 },
+  flood: { enabled: false, label: '🌊 Flood Risk', color: '#3b82f6', opacity: 0.6 },
   grid: { enabled: false, label: '⚡ Power Grid', color: '#eab308', opacity: 0.7 },
   datacentre: { enabled: false, label: '🖥️ Data Centre Sites', color: '#8b5cf6', opacity: 0.7 },
-  decay: { enabled: false, label: '🏚️ Urban Decay', color: '#ef4444', opacity: 0.6 },
-  traffic: { enabled: true, label: '🚗 Live Traffic (TomTom)', color: '#06b6d4', opacity: 0.9 },
+  decay: { enabled: false, label: '🏚️ Urban Decay (Ward)', color: '#ef4444', opacity: 0.6 },
+  traffic: { enabled: false, label: '🚗 Live Traffic (TomTom)', color: '#06b6d4', opacity: 0.9 },
   buildings: { enabled: true, label: '🏢 3D Buildings', color: '#64748b', opacity: 0.8 },
 }
 
@@ -19,6 +20,7 @@ export default function App() {
   const [layers, setLayers] = useState(INITIAL_LAYERS)
   const [selectedFeature, setSelectedFeature] = useState(null)
   const [seaLevelRise, setSeaLevelRise] = useState(0)
+  const [udiPeriod, setUdiPeriod] = useState('2025')
   const [viewState, setViewState] = useState({
     longitude: -5.9301,
     latitude: 54.5973,
@@ -48,6 +50,7 @@ export default function App() {
         onViewStateChange={setViewState}
         layers={layers}
         seaLevelRise={seaLevelRise}
+        udiPeriod={udiPeriod}
         onFeatureClick={setSelectedFeature}
       />
       <Sidebar>
@@ -57,6 +60,8 @@ export default function App() {
           onOpacityChange={setLayerOpacity}
           seaLevelRise={seaLevelRise}
           onSeaLevelChange={setSeaLevelRise}
+          udiPeriod={udiPeriod}
+          onUdiPeriodChange={setUdiPeriod}
         />
       </Sidebar>
       {selectedFeature && (
