@@ -14,9 +14,7 @@ const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.j
 
 // Deck.gl overlay — only renders when zoomed in enough for Mercator alignment
 function DeckGLOverlay({ layers, getTooltip, zoom }) {
-  // At low zoom, globe projection distorts Deck.gl coordinates
-  // Only render layers when zoomed in enough (zoom >= 8 is flat Mercator)
-  const visibleLayers = zoom >= 7 ? layers : []
+  const visibleLayers = zoom >= 10 ? layers : []
   const overlay = useControl(() => new MapboxOverlay({ layers: visibleLayers, getTooltip }))
   overlay.setProps({ layers: visibleLayers, getTooltip })
   return null
