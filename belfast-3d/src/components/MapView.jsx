@@ -206,12 +206,8 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           id: 'traffic-layer',
           data: trafficData,
           getPosition: d => d.position,
-          getRadius: d => {
-            const rt = d.roadType
-            if (rt === 'motorway' || rt === 'motorway_link') return 12
-            if (rt === 'trunk' || rt === 'trunk_link') return 10
-            return 7
-          },
+          getRadius: 3,
+          radiusUnits: 'pixels',
           getFillColor: d => {
             const c = d.congestion ?? 0.2
             if (c < 0.15) return [80, 220, 120, 220]
@@ -220,8 +216,6 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
             if (c < 0.7) return [255, 150, 30, 220]
             return [255, 60, 60, 230]
           },
-          radiusMinPixels: 1.5,
-          radiusMaxPixels: 5,
           opacity: layers.traffic.opacity ?? 0.9,
           updateTriggers: {
             getPosition: trafficData,
