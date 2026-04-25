@@ -1,13 +1,14 @@
 import { useMemo } from 'react'
 import { Map } from 'react-map-gl/maplibre'
 import DeckGL from '@deck.gl/react'
-import { GeoJsonLayer, ColumnLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, ColumnLayer, ScatterplotLayer } from '@deck.gl/layers'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useFloodData } from '../hooks/useFloodData'
 import { useBuildingData } from '../hooks/useBuildingData'
 import { useGridData } from '../hooks/useGridData'
 import { useDecayData } from '../hooks/useDecayData'
 import { useDataCentreData } from '../hooks/useDataCentreData'
+import { useTrafficData } from '../hooks/useTrafficData'
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
@@ -17,6 +18,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
   const gridData = useGridData()
   const decayData = useDecayData()
   const dataCentreData = useDataCentreData()
+  const trafficData = useTrafficData()
 
   const deckLayers = useMemo(() => {
     const result = []
@@ -192,8 +194,39 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
       )
     }
 
+    // Traffic Simulation
+    if (layers.traffic?.enabled && trafficData) {
+      result.push(
+        new ScatterplotLayer({
+          id: 'traffic-layer',
+          data: trafficData,
+          getPosition: d => d.position,
+          getRadius: d => {
+            const rt = d.roadType
+            if (rt === 'motorway' || rt === 'motorway_link') return 12
+            if (rt === 'trunk' || rt === 'trunk_link') return 10
+            return 7
+          },
+          getFillColor: d => {
+            const s = d.speed
+            // Fast = white/blue, slow = orange/red
+            if (s > 2.0) return [200, 220, 255, 220]
+            if (s > 1.5) return [160, 200, 255, 210]
+            if (s > 1.0) return [255, 220, 100, 200]
+            return [255, 140, 60, 200]
+          },
+          radiusMinPixels: 1.5,
+          radiusMaxPixels: 5,
+          opacity: layers.traffic.opacity ?? 0.9,
+          updateTriggers: {
+            getPosition: trafficData,
+          },
+        })
+      )
+    }
+
     return result
-  }, [layers, floodData, buildingData, gridData, decayData, dataCentreData, seaLevelRise, onFeatureClick])
+  }, [layers, floodData, buildingData, gridData, decayData, dataCentreData, trafficData, seaLevelRise, onFeatureClick])
 
   return (
     <DeckGL
