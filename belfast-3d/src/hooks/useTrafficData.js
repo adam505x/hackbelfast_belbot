@@ -1,97 +1,139 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
-// Simulation config
 const VEHICLE_COUNT = 1200
-const SPEED_FACTOR = 0.00003 // degrees per frame at base speed
 const FRAME_MS = 50
 
-// Speed multipliers by road type
+// Speed in degrees-per-tick by road type
 const ROAD_SPEEDS = {
-  motorway: 2.5,
-  motorway_link: 2.0,
-  trunk: 2.0,
-  trunk_link: 1.6,
-  primary: 1.4,
-  primary_link: 1.2,
-  secondary: 1.1,
-  secondary_link: 1.0,
-  tertiary: 0.9,
-  tertiary_link: 0.8,
+  motorway: 0.000080,
+  motorway_link: 0.000065,
+  trunk: 0.000065,
+  trunk_link: 0.000050,
+  primary: 0.000045,
+  primary_link: 0.000038,
+  secondary: 0.000035,
+  secondary_link: 0.000030,
+  tertiary: 0.000025,
+  tertiary_link: 0.000020,
 }
 
-function lerp(a, b, t) {
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
-}
+// Build a spatial index so vehicles can find a connecting road at the end of their current one
+function buildJunctionIndex(roads) {
+  const index = new Map()
+  const key = (c) => `${c[0].toFixed(4)},${c[1].toFixed(4)}`
 
-function segmentLength(a, b) {
-  const dx = (b[0] - a[0]) * 111320 * Math.cos(a[1] * Math.PI / 180)
-  const dy = (b[1] - a[1]) * 110540
-  return Math.sqrt(dx * dx + dy * dy)
+  for (let i = 0; i < roads.length; i++) {
+    const coords = roads[i].c
+    if (coords.length < 2) continue
+
+    const startKey = key(coords[0])
+    const endKey = key(coords[coords.length - 1])
+
+    // At the end of this road, which roads can we join?
+    // A road is joinable if its start or end is near our end
+    if (!index.has(endKey)) index.set(endKey, [])
+    index.get(endKey).push(i)
+
+    if (!index.has(startKey)) index.set(startKey, [])
+    index.get(startKey).push(i)
+  }
+
+  return { index, key }
 }
 
 function createVehicle(roads) {
-  const road = roads[Math.floor(Math.random() * roads.length)]
-  const coords = road.c
-  const speed = ROAD_SPEEDS[road.h] || 1.0
-  // Random direction
+  const roadIdx = Math.floor(Math.random() * roads.length)
+  const road = roads[roadIdx]
   const reverse = Math.random() > 0.5
-  const orderedCoords = reverse ? [...coords].reverse() : coords
+  const coords = reverse ? [...road.c].reverse() : road.c
+  const baseSpeed = ROAD_SPEEDS[road.h] || 0.000025
+  const speed = baseSpeed * (0.75 + Math.random() * 0.5)
 
   return {
-    coords: orderedCoords,
-    segIndex: 0,
-    segProgress: Math.random(),
-    speed: speed * (0.7 + Math.random() * 0.6), // some variance
+    roadIdx,
+    coords,
+    seg: 0,
+    t: 0, // progress along current segment [0,1]
+    speed,
     roadType: road.h,
   }
 }
 
-function stepVehicle(v, roads) {
-  const coords = v.coords
-  if (coords.length < 2) return resetVehicle(v, roads)
+function getPosition(v) {
+  const a = v.coords[v.seg]
+  const b = v.coords[v.seg + 1]
+  if (!a || !b) return null
+  return [
+    a[0] + (b[0] - a[0]) * v.t,
+    a[1] + (b[1] - a[1]) * v.t,
+  ]
+}
 
-  const a = coords[v.segIndex]
-  const b = coords[v.segIndex + 1]
-  if (!a || !b) return resetVehicle(v, roads)
+function segLen(a, b) {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  return Math.sqrt(dx * dx + dy * dy)
+}
 
-  const len = segmentLength(a, b)
-  const advance = (SPEED_FACTOR * v.speed) / Math.max(len / 111320, 0.00001)
-  v.segProgress += advance
-
-  if (v.segProgress >= 1) {
-    v.segProgress = 0
-    v.segIndex++
-    if (v.segIndex >= coords.length - 1) {
-      return resetVehicle(v, roads)
-    }
+function advanceVehicle(v, roads, junctions) {
+  const a = v.coords[v.seg]
+  const b = v.coords[v.seg + 1]
+  if (!a || !b) {
+    // Shouldn't happen, but recover
+    Object.assign(v, createVehicle(roads))
+    return
   }
 
-  return v
-}
+  const len = segLen(a, b)
+  const step = len > 0 ? v.speed / len : 1
+  v.t += step
 
-function resetVehicle(v, roads) {
-  const nv = createVehicle(roads)
-  // Copy reference so we mutate in place
-  v.coords = nv.coords
-  v.segIndex = nv.segIndex
-  v.segProgress = nv.segProgress
-  v.speed = nv.speed
-  v.roadType = nv.roadType
-  return v
-}
+  // Move to next segment
+  while (v.t >= 1 && v.seg < v.coords.length - 2) {
+    v.t -= 1
+    v.seg++
+  }
 
-function getVehiclePosition(v) {
-  const a = v.coords[v.segIndex]
-  const b = v.coords[v.segIndex + 1]
-  if (!a || !b) return null
-  return lerp(a, b, v.segProgress)
+  // Reached end of road — find a connecting road
+  if (v.t >= 1) {
+    const endPt = v.coords[v.coords.length - 1]
+    const k = junctions.key(endPt)
+    const candidates = junctions.index.get(k)
+
+    if (candidates && candidates.length > 0) {
+      // Pick a random connecting road (but not the same one going backwards)
+      const filtered = candidates.filter(i => i !== v.roadIdx)
+      const pool = filtered.length > 0 ? filtered : candidates
+      const nextIdx = pool[Math.floor(Math.random() * pool.length)]
+      const nextRoad = roads[nextIdx]
+      const nextCoords = nextRoad.c
+
+      // Figure out which direction to traverse — start from the junction end
+      const startDist = segLen(endPt, nextCoords[0])
+      const endDist = segLen(endPt, nextCoords[nextCoords.length - 1])
+
+      const newCoords = startDist <= endDist ? nextCoords : [...nextCoords].reverse()
+      const baseSpeed = ROAD_SPEEDS[nextRoad.h] || 0.000025
+
+      v.roadIdx = nextIdx
+      v.coords = newCoords
+      v.seg = 0
+      v.t = 0
+      v.speed = baseSpeed * (0.75 + Math.random() * 0.5)
+      v.roadType = nextRoad.h
+    } else {
+      // Dead end — reverse direction on same road
+      v.coords = [...v.coords].reverse()
+      v.seg = 0
+      v.t = 0
+    }
+  }
 }
 
 export function useTrafficData() {
   const [positions, setPositions] = useState(null)
-  const roadsRef = useRef(null)
-  const vehiclesRef = useRef(null)
-  const frameRef = useRef(null)
+  const stateRef = useRef(null)
+  const timerRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -100,38 +142,39 @@ export function useTrafficData() {
       .then(r => r.json())
       .then(roads => {
         if (cancelled) return
-        roadsRef.current = roads
 
-        // Initialize vehicles
-        const vehicles = []
-        for (let i = 0; i < VEHICLE_COUNT; i++) {
-          vehicles.push(createVehicle(roads))
+        const junctions = buildJunctionIndex(roads)
+        const vehicles = Array.from({ length: VEHICLE_COUNT }, () => createVehicle(roads))
+
+        // Spread vehicles across their roads so they don't all start at position 0
+        for (const v of vehicles) {
+          const totalSegs = v.coords.length - 1
+          if (totalSegs > 0) {
+            const startSeg = Math.floor(Math.random() * totalSegs)
+            v.seg = startSeg
+            v.t = Math.random()
+          }
         }
-        vehiclesRef.current = vehicles
 
-        console.log(`Traffic sim: ${vehicles.length} vehicles on ${roads.length} roads`)
+        stateRef.current = { roads, junctions, vehicles }
+        console.log(`Traffic sim: ${VEHICLE_COUNT} vehicles, ${roads.length} roads, ${junctions.index.size} junctions`)
 
-        // Start animation loop
         function tick() {
           if (cancelled) return
-          const vecs = vehiclesRef.current
-          const rds = roadsRef.current
+          const { roads, junctions, vehicles } = stateRef.current
 
-          const pts = []
-          for (let i = 0; i < vecs.length; i++) {
-            stepVehicle(vecs[i], rds)
-            const pos = getVehiclePosition(vecs[i])
-            if (pos) {
-              pts.push({
-                position: pos,
-                speed: vecs[i].speed,
-                roadType: vecs[i].roadType,
-              })
+          const pts = new Array(vehicles.length)
+          for (let i = 0; i < vehicles.length; i++) {
+            advanceVehicle(vehicles[i], roads, junctions)
+            pts[i] = {
+              position: getPosition(vehicles[i]),
+              speed: vehicles[i].speed,
+              roadType: vehicles[i].roadType,
             }
           }
 
           setPositions(pts)
-          frameRef.current = setTimeout(tick, FRAME_MS)
+          timerRef.current = setTimeout(tick, FRAME_MS)
         }
 
         tick()
@@ -140,7 +183,7 @@ export function useTrafficData() {
 
     return () => {
       cancelled = true
-      if (frameRef.current) clearTimeout(frameRef.current)
+      if (timerRef.current) clearTimeout(timerRef.current)
     }
   }, [])
 
