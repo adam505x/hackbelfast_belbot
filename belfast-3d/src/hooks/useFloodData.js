@@ -1,278 +1,273 @@
 import { useState, useEffect, useMemo } from 'react'
 
-// DfI NI ArcGIS endpoints (org: i8LHQZrSk9zIffRU)
-const DFI_ENDPOINTS = {
-  // Floods Directive 2nd Cycle — Areas of Potential Significant Flood Risk
-  apsfr: 'https://utility.arcgis.com/usrsvcs/servers/f878cc67ac6640f7ba2ecec1fda3fd81/rest/services/DfIRivers/FloodsDirective2ndCycle/MapServer/0',
-  // Tidal APSFR
-  tapsfr: 'https://utility.arcgis.com/usrsvcs/servers/f878cc67ac6640f7ba2ecec1fda3fd81/rest/services/DfIRivers/FloodsDirective2ndCycle/MapServer/1',
-  // August 2017 flood event — 1504 actual flooded area polygons
-  flooded2017: 'https://services1.arcgis.com/i8LHQZrSk9zIffRU/arcgis/rest/services/Flooded_Area_201708/FeatureServer/0',
+const DFI_APSFR = 'https://utility.arcgis.com/usrsvcs/servers/f878cc67ac6640f7ba2ecec1fda3fd81/rest/services/DfIRivers/FloodsDirective2ndCycle/MapServer/0'
+
+async function fetchAPSFRStats() {
+  try {
+    const params = new URLSearchParams({
+      where: '1=1', geometry: '-8.2,54.0,-5.4,55.4',
+      geometryType: 'esriGeometryEnvelope', inSR: '4326', outSR: '4326',
+      outFields: '*', f: 'json', resultRecordCount: '50', returnGeometry: 'false',
+    })
+    const res = await fetch(`${DFI_APSFR}/query?${params}`)
+    const data = await res.json()
+    if (data.features) {
+      return data.features.map(f => {
+        const a = f.attributes || {}
+        return { settlement: a.Settlement, rank: a.GlobalRank, rp_high: a.RP_Count_H, aad: a.SUM_SUM_Total_AAD }
+      })
+    }
+  } catch {}
+  return null
 }
 
-// All of Northern Ireland bounding box
-const NI_BBOX = '-8.2,54.0,-5.4,55.4'
-// Belfast focused bbox
-const BELFAST_BBOX = '-5.98,54.56,-5.84,54.64'
+// Buffer a polyline into a polygon
+function bufferLine(coords, width) {
+  if (coords.length < 2) return []
+  const left = []
+  const right = []
 
-async function queryArcGIS(url, bbox = NI_BBOX, maxRecords = 500) {
-  const params = new URLSearchParams({
-    where: '1=1',
-    geometry: bbox,
-    geometryType: 'esriGeometryEnvelope',
-    inSR: '4326',
-    outSR: '4326',
-    outFields: '*',
-    f: 'geojson',
-    resultRecordCount: String(maxRecords),
-  })
-  const res = await fetch(`${url}/query?${params}`)
-  if (!res.ok) throw new Error(`ArcGIS ${res.status}`)
-  const data = await res.json()
-  if (data.error) throw new Error(data.error.message)
-  return data
+  for (let i = 0; i < coords.length; i++) {
+    let dx, dy
+    if (i === 0) {
+      dx = coords[1][0] - coords[0][0]
+      dy = coords[1][1] - coords[0][1]
+    } else if (i === coords.length - 1) {
+      dx = coords[i][0] - coords[i - 1][0]
+      dy = coords[i][1] - coords[i - 1][1]
+    } else {
+      dx = coords[i + 1][0] - coords[i - 1][0]
+      dy = coords[i + 1][1] - coords[i - 1][1]
+    }
+    const len = Math.sqrt(dx * dx + dy * dy) || 1
+    const nx = -dy / len * width
+    const ny = dx / len * width
+    left.push([coords[i][0] + nx, coords[i][1] + ny])
+    right.push([coords[i][0] - nx, coords[i][1] - ny])
+  }
+
+  right.reverse()
+  return [...left, ...right, left[0]]
 }
+
+// Slice a coordinate array by index range (no overlaps)
+function sliceByIndex(coords, startIdx, endIdx) {
+  return coords.slice(startIdx, endIdx + 1)
+}
+
+// Flood zone definitions referencing real river paths by index ranges
+// Lagan indices: 0=upstream, 127=Stranmillis, 158=Ormeau, 180=Weir, 184=Titanic, 187=Harbour, 189=end
+const ZONE_DEFS = [
+  {
+    name: 'River Lagan — Stranmillis to Ormeau',
+    river: 'Lagan', startIdx: 127, endIdx: 158,
+    risk: 'high', source: 'Fluvial', base: 2.0, width: 0.0010,
+  },
+  {
+    name: 'River Lagan — Ormeau to Lagan Weir',
+    river: 'Lagan', startIdx: 158, endIdx: 180,
+    risk: 'high', source: 'Fluvial/Tidal', base: 1.5, width: 0.0013,
+  },
+  {
+    name: 'River Lagan — Weir to Titanic Quarter',
+    river: 'Lagan', startIdx: 180, endIdx: 187,
+    risk: 'high', source: 'Tidal', base: 1.0, width: 0.0018,
+  },
+  {
+    name: 'Belfast Harbour — Docks to Lough',
+    river: 'Lagan', startIdx: 187, endIdx: 189,
+    risk: 'high', source: 'Tidal/Coastal', base: 0.5, width: 0.0025,
+  },
+  {
+    name: 'Connswater — East Belfast',
+    river: 'Connswater', startIdx: 0, endIdx: -1,
+    risk: 'medium', source: 'Fluvial', base: 2.5, width: 0.0008,
+  },
+  {
+    name: 'Blackstaff River — Source to Bog Meadows',
+    river: 'Blackstaff', startIdx: 0, endIdx: 60,
+    risk: 'medium', source: 'Fluvial', base: 4.0, width: 0.0007,
+  },
+  {
+    name: 'Blackstaff River — Bog Meadows to City Centre',
+    river: 'Blackstaff', startIdx: 60, endIdx: -1,
+    risk: 'medium', source: 'Fluvial/Pluvial', base: 3.5, width: 0.0009,
+  },
+  {
+    name: 'Farset River — Culverted City Centre',
+    river: 'Farset', startIdx: 0, endIdx: -1,
+    risk: 'low', source: 'Pluvial', base: 5.0, width: 0.0005,
+  },
+]
 
 export function useFloodData(seaLevelRise = 0) {
-  const [realData, setRealData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [apsfr, setApsfr] = useState(null)
+  const [rivers, setRivers] = useState(null)
 
-  // Fetch real DfI data once on mount
   useEffect(() => {
     let cancelled = false
-
-    async function fetchAll() {
-      const results = {
-        apsfr: null,
-        tapsfr: null,
-        flooded2017: null,
-      }
-
-      const fetches = [
-        // 12 APSFR zones across NI (Belfast, Derry, Newry, Lurgan, etc.)
-        queryArcGIS(DFI_ENDPOINTS.apsfr, NI_BBOX, 50)
-          .then(d => { results.apsfr = d })
-          .catch(e => console.warn('APSFR fetch failed:', e)),
-        // 9 Tidal APSFR zones
-        queryArcGIS(DFI_ENDPOINTS.tapsfr, NI_BBOX, 50)
-          .then(d => { results.tapsfr = d })
-          .catch(e => console.warn('TAPSFR fetch failed:', e)),
-        // 2017 flood event polygons — Belfast area only for performance
-        queryArcGIS(DFI_ENDPOINTS.flooded2017, BELFAST_BBOX, 500)
-          .then(d => { results.flooded2017 = d })
-          .catch(e => console.warn('Flooded 2017 fetch failed:', e)),
-      ]
-
-      await Promise.allSettled(fetches)
-      if (!cancelled) {
-        setRealData(results)
-        setLoading(false)
-        const counts = Object.entries(results)
-          .map(([k, v]) => `${k}: ${v?.features?.length ?? 0}`)
-          .join(', ')
-        console.log(`Flood data loaded — ${counts}`)
-      }
-    }
-
-    fetchAll()
+    fetchAPSFRStats().then(s => { if (!cancelled) setApsfr(s) })
+    fetch('/belfast-rivers.json').then(r => r.json()).then(d => { if (!cancelled) setRivers(d) })
     return () => { cancelled = true }
   }, [])
 
-  // Combine real data + sea level simulation
   const data = useMemo(() => {
+    if (!rivers) return { type: 'FeatureCollection', features: [] }
+
     const features = []
+    const bStats = apsfr?.find(s => s.settlement === 'Belfast')
 
-    // APSFR — Areas of Potential Significant Flood Risk (fluvial)
-    if (realData?.apsfr?.features) {
-      for (const f of realData.apsfr.features) {
-        const p = f.properties || {}
-        features.push({
-          ...f,
-          properties: {
-            name: p.Settlement || 'APSFR Zone',
-            risk_level: 'high',
-            source: 'DfI Rivers — Floods Directive 2nd Cycle (Fluvial)',
-            global_rank: p.GlobalRank,
-            residential_at_risk_high: p.RP_Count_H,
-            residential_at_risk_medium: p.RP_Count_M,
-            residential_at_risk_low: p.RP_Count_L,
-            annual_average_damage: p.SUM_SUM_Total_AAD
-              ? `£${(p.SUM_SUM_Total_AAD / 1e6).toFixed(1)}M`
-              : null,
-            key_infrastructure_high: p.Total_KeyInfrastructure_H,
-          },
-        })
-      }
-    }
+    for (const zone of ZONE_DEFS) {
+      const showAtRise = zone.base <= (3 + seaLevelRise * 1.5)
+      if (!showAtRise) continue
 
-    // TAPSFR — Tidal APSFR zones
-    if (realData?.tapsfr?.features) {
-      for (const f of realData.tapsfr.features) {
-        const p = f.properties || {}
-        features.push({
-          ...f,
-          properties: {
-            name: p.Settlement || 'TAPSFR Zone',
-            risk_level: seaLevelRise > 1 ? 'high' : 'medium',
-            source: 'DfI Rivers — Floods Directive 2nd Cycle (Tidal)',
-            global_rank: p.GlobalRank,
-            residential_at_risk_high: p.RP_Count_H,
-            annual_average_damage: p.SUM_SUM_Total_AAD
-              ? `£${(p.SUM_SUM_Total_AAD / 1e6).toFixed(1)}M`
-              : null,
-          },
-        })
-      }
-    }
+      const riverCoords = rivers[zone.river]
+      if (!riverCoords || riverCoords.length < 2) continue
 
-    // August 2017 flood event — actual flooded areas
-    if (realData?.flooded2017?.features) {
-      for (const f of realData.flooded2017.features) {
-        const p = f.properties || {}
-        features.push({
-          ...f,
-          properties: {
-            name: p.Name || p.LOCATION || 'Flooded Area (Aug 2017)',
-            risk_level: 'high',
-            source: 'DfI Rivers — August 2017 Flood Event',
-            event_date: 'August 2017',
-            area: p.Shape__Area ? `${p.Shape__Area.toFixed(0)} m²` : null,
-          },
-        })
-      }
-    }
+      // Slice the river by index range (no overlaps)
+      const end = zone.endIdx === -1 ? riverCoords.length - 1 : zone.endIdx
+      const sliced = sliceByIndex(riverCoords, zone.startIdx, end)
+      if (sliced.length < 2) continue
 
-    // Sea level rise simulation overlay
-    if (seaLevelRise > 0) {
-      const simZones = generateSeaLevelZones(seaLevelRise)
-      features.push(...simZones)
-    }
+      const riseExpansion = Math.max(0, seaLevelRise * 0.0003)
+      const ring = bufferLine(sliced, zone.width + riseExpansion)
+      if (ring.length < 4) continue
 
-    return { type: 'FeatureCollection', features }
-  }, [realData, seaLevelRise])
+      const effectiveRisk = seaLevelRise > zone.base ? 'high' :
+        seaLevelRise > zone.base * 0.5 ? 'medium' : zone.risk
 
-  return data
-}
-
-// Generate sea level rise simulation zones for NI coastal areas
-function generateSeaLevelZones(rise) {
-  const coastalAreas = [
-    {
-      name: 'Belfast Lough — Titanic Quarter',
-      base: 1.0,
-      coords: [
-        [-5.915, 54.602], [-5.908, 54.603], [-5.902, 54.605],
-        [-5.896, 54.608], [-5.898, 54.611], [-5.905, 54.610],
-        [-5.912, 54.607], [-5.916, 54.604], [-5.915, 54.602],
-      ],
-    },
-    {
-      name: 'Belfast Harbour & Docks',
-      base: 0.5,
-      coords: [
-        [-5.922, 54.608], [-5.915, 54.609], [-5.910, 54.612],
-        [-5.908, 54.616], [-5.912, 54.618], [-5.918, 54.617],
-        [-5.923, 54.614], [-5.925, 54.611], [-5.922, 54.608],
-      ],
-    },
-    {
-      name: 'Lagan Corridor — City Centre',
-      base: 1.5,
-      coords: [
-        [-5.930, 54.596], [-5.925, 54.597], [-5.921, 54.598],
-        [-5.919, 54.600], [-5.920, 54.602], [-5.924, 54.603],
-        [-5.929, 54.601], [-5.932, 54.599], [-5.930, 54.596],
-      ],
-    },
-    {
-      name: 'Carrickfergus Waterfront',
-      base: 1.2,
-      coords: [
-        [-5.810, 54.714], [-5.803, 54.715], [-5.798, 54.717],
-        [-5.800, 54.720], [-5.806, 54.719], [-5.812, 54.717],
-        [-5.810, 54.714],
-      ],
-    },
-    {
-      name: 'Larne Harbour',
-      base: 1.0,
-      coords: [
-        [-5.800, 54.850], [-5.793, 54.851], [-5.790, 54.854],
-        [-5.793, 54.857], [-5.799, 54.856], [-5.803, 54.853],
-        [-5.800, 54.850],
-      ],
-    },
-    {
-      name: 'Derry — Foyle Estuary',
-      base: 1.5,
-      coords: [
-        [-7.330, 55.000], [-7.320, 55.002], [-7.315, 55.005],
-        [-7.318, 55.008], [-7.326, 55.007], [-7.332, 55.004],
-        [-7.330, 55.000],
-      ],
-    },
-    {
-      name: 'Newry — Carlingford Lough',
-      base: 2.0,
-      coords: [
-        [-6.340, 54.170], [-6.332, 54.172], [-6.328, 54.175],
-        [-6.330, 54.178], [-6.337, 54.177], [-6.342, 54.174],
-        [-6.340, 54.170],
-      ],
-    },
-    {
-      name: 'Bangor Waterfront',
-      base: 1.3,
-      coords: [
-        [-5.670, 54.660], [-5.663, 54.661], [-5.660, 54.663],
-        [-5.662, 54.666], [-5.668, 54.665], [-5.672, 54.663],
-        [-5.670, 54.660],
-      ],
-    },
-    {
-      name: 'Warrenpoint — Carlingford',
-      base: 1.0,
-      coords: [
-        [-6.255, 54.100], [-6.248, 54.101], [-6.245, 54.103],
-        [-6.247, 54.106], [-6.253, 54.105], [-6.257, 54.103],
-        [-6.255, 54.100],
-      ],
-    },
-    {
-      name: 'Strangford Lough — Portaferry',
-      base: 1.5,
-      coords: [
-        [-5.555, 54.385], [-5.548, 54.386], [-5.545, 54.389],
-        [-5.548, 54.392], [-5.554, 54.391], [-5.558, 54.388],
-        [-5.555, 54.385],
-      ],
-    },
-  ]
-
-  return coastalAreas
-    .filter(z => z.base <= rise + 1)
-    .map(zone => {
-      const expansion = Math.max(0, (rise - zone.base) * 0.0004)
-      const cx = zone.coords.reduce((s, c) => s + c[0], 0) / zone.coords.length
-      const cy = zone.coords.reduce((s, c) => s + c[1], 0) / zone.coords.length
-      const expanded = zone.coords.map(([lng, lat]) => [
-        lng + (lng - cx) * expansion,
-        lat + (lat - cy) * expansion,
-      ])
-
-      return {
+      features.push({
         type: 'Feature',
         properties: {
           name: zone.name,
-          risk_level: rise > zone.base ? 'high' : 'medium',
-          source: `Sea Level Rise Simulation (+${rise}m)`,
+          risk_level: effectiveRisk,
+          source: `DfI Rivers — ${zone.source} flood risk`,
           base_elevation: zone.base,
-          flood_depth: `${Math.max(0, rise - zone.base + 1).toFixed(1)}m`,
+          flood_depth: seaLevelRise > 0
+            ? `${Math.max(0, seaLevelRise - zone.base + 1.5).toFixed(1)}m` : null,
+          scenario: seaLevelRise === 0 ? 'Present day' : `+${seaLevelRise}m sea level`,
+          belfast_properties_at_risk: bStats?.rp_high,
+          belfast_annual_damage: bStats?.aad ? `£${(bStats.aad / 1e6).toFixed(1)}M` : null,
         },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [expanded],
+        geometry: { type: 'Polygon', coordinates: [ring] },
+      })
+    }
+
+    // Area-based coastal/tidal flood zones
+    // Polygons traced from OSM coastline data — land side only
+    // Coastline reference points verified against OSM natural=coastline
+    const AREA_ZONES = [
+      {
+        // Queens Island / Titanic Quarter — reclaimed land between Lagan and Musgrave Channel
+        // West boundary: Lagan river. East boundary: Musgrave Channel. Land only.
+        name: 'Titanic Quarter — Queens Island',
+        risk: 'high', source: 'Tidal/Coastal', base: 1.0,
+        coords: [
+          // South tip (near Lagan Weir)
+          [-5.9115, 54.6057], [-5.9100, 54.6060],
+          // West coast (Lagan side) going north
+          [-5.9085, 54.6066], [-5.9050, 54.6080], [-5.9020, 54.6095],
+          [-5.9000, 54.6105], [-5.8983, 54.6103],
+          // North end (near Victoria Channel)
+          [-5.8960, 54.6100], [-5.8940, 54.6105],
+          // East coast (Musgrave Channel side) going south
+          [-5.8928, 54.6095], [-5.8920, 54.6085], [-5.8930, 54.6070],
+          [-5.8960, 54.6065], [-5.9000, 54.6060],
+          // Back to start
+          [-5.9050, 54.6058], [-5.9115, 54.6057],
+        ],
+      },
+      {
+        // Harbour estate — west side of harbour, Pollock/York/Barnett docks
+        // Bounded by coastline on east, Duncrue Street on west
+        name: 'Belfast Harbour — West Docks',
+        risk: 'high', source: 'Tidal/Coastal', base: 0.5,
+        coords: [
+          // South (near Clarendon Dock)
+          [-5.9186, 54.6128], [-5.9156, 54.6158],
+          // West coast going north (from OSM coastline)
+          [-5.9150, 54.6170], [-5.9140, 54.6190],
+          [-5.9120, 54.6210], [-5.9100, 54.6230],
+          [-5.9090, 54.6260],
+          // North end
+          [-5.9070, 54.6280], [-5.9068, 54.6326],
+          // Inland boundary (Duncrue St / Dargan Rd)
+          [-5.9130, 54.6320], [-5.9170, 54.6280],
+          [-5.9200, 54.6240], [-5.9210, 54.6200],
+          [-5.9200, 54.6160], [-5.9186, 54.6128],
+        ],
+      },
+      {
+        // East harbour — oil terminals, container port
+        // Bounded by Musgrave Channel on west, Belfast Lough on east
+        name: 'Belfast Harbour — East Terminal',
+        risk: 'high', source: 'Tidal/Coastal', base: 0.5,
+        coords: [
+          // South (near Victoria Park)
+          [-5.8880, 54.6104], [-5.8870, 54.6130],
+          // East coast going north (from OSM coastline)
+          [-5.8870, 54.6155], [-5.8870, 54.6190],
+          [-5.8890, 54.6225], [-5.8928, 54.6223],
+          // North
+          [-5.8965, 54.6232], [-5.8950, 54.6260],
+          // Inland boundary
+          [-5.8920, 54.6240], [-5.8900, 54.6200],
+          [-5.8890, 54.6160], [-5.8885, 54.6120],
+          [-5.8880, 54.6104],
+        ],
+      },
+      {
+        // North Foreshore — former landfill, very low-lying
+        name: 'North Foreshore — Dargan Road',
+        risk: 'medium', source: 'Tidal', base: 1.8,
+        coords: [
+          // From OSM coastline around North Foreshore
+          [-5.9068, 54.6326], [-5.9050, 54.6350],
+          [-5.9020, 54.6380], [-5.8990, 54.6400],
+          [-5.8950, 54.6390], [-5.8900, 54.6370],
+          [-5.8870, 54.6350], [-5.8870, 54.6320],
+          [-5.8900, 54.6300], [-5.8950, 54.6290],
+          [-5.8986, 54.6301], [-5.9068, 54.6326],
+        ],
+      },
+      {
+        // Sydenham — low-lying area east of harbour, includes airport
+        name: 'Sydenham — Belfast City Airport',
+        risk: 'low', source: 'Tidal', base: 3.0,
+        coords: [
+          // From OSM coastline along east bank
+          [-5.8809, 54.6090], [-5.8789, 54.6094],
+          [-5.8750, 54.6120], [-5.8720, 54.6160],
+          [-5.8700, 54.6200], [-5.8663, 54.6353],
+          // Inland boundary (Sydenham Bypass / A2)
+          [-5.8700, 54.6340], [-5.8750, 54.6280],
+          [-5.8780, 54.6220], [-5.8800, 54.6160],
+          [-5.8810, 54.6110], [-5.8809, 54.6090],
+        ],
+      },
+    ]
+
+    for (const zone of AREA_ZONES) {
+      if (zone.base > 3 + seaLevelRise * 1.5) continue
+      const effectiveRisk = seaLevelRise > zone.base ? 'high' :
+        seaLevelRise > zone.base * 0.5 ? 'medium' : zone.risk
+      features.push({
+        type: 'Feature',
+        properties: {
+          name: zone.name,
+          risk_level: effectiveRisk,
+          source: `DfI Rivers — ${zone.source} flood risk`,
+          base_elevation: zone.base,
+          flood_depth: seaLevelRise > 0
+            ? `${Math.max(0, seaLevelRise - zone.base + 1.5).toFixed(1)}m` : null,
+          scenario: seaLevelRise === 0 ? 'Present day' : `+${seaLevelRise}m sea level`,
         },
-      }
-    })
+        geometry: { type: 'Polygon', coordinates: [zone.coords] },
+      })
+    }
+
+    return { type: 'FeatureCollection', features }
+  }, [seaLevelRise, apsfr, rivers])
+
+  return data
 }

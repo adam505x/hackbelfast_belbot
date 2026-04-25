@@ -1,13 +1,14 @@
 import { useMemo } from 'react'
 import { Map } from 'react-map-gl/maplibre'
 import DeckGL from '@deck.gl/react'
-import { GeoJsonLayer, ColumnLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, ColumnLayer, ScatterplotLayer } from '@deck.gl/layers'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useFloodData } from '../hooks/useFloodData'
 import { useBuildingData } from '../hooks/useBuildingData'
 import { useGridData } from '../hooks/useGridData'
 import { useDecayData } from '../hooks/useDecayData'
 import { useDataCentreData } from '../hooks/useDataCentreData'
+import { useTrafficData } from '../hooks/useTrafficData'
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
@@ -17,6 +18,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
   const gridData = useGridData()
   const decayData = useDecayData()
   const dataCentreData = useDataCentreData()
+  const trafficData = useTrafficData()
 
   const deckLayers = useMemo(() => {
     const result = []
@@ -192,8 +194,41 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
       )
     }
 
+    // Traffic Simulation
+    if (layers.traffic?.enabled && trafficData) {
+      result.push(
+        new ScatterplotLayer({
+          id: 'traffic-layer',
+          data: trafficData,
+          getPosition: d => d.position,
+          getRadius: d => {
+            const rt = d.roadType
+            if (rt === 'motorway' || rt === 'motorway_link') return 12
+            if (rt === 'trunk' || rt === 'trunk_link') return 10
+            return 7
+          },
+          getFillColor: d => {
+            // Color by real congestion: green=free flow, yellow=moderate, red=congested
+            const c = d.congestion ?? 0.2
+            if (c < 0.15) return [80, 220, 120, 220]   // green — free flow
+            if (c < 0.3) return [160, 230, 80, 210]     // light green
+            if (c < 0.5) return [255, 220, 50, 210]     // yellow — moderate
+            if (c < 0.7) return [255, 150, 30, 220]     // orange — slow
+            return [255, 60, 60, 230]                    // red — congested
+          },
+          radiusMinPixels: 1.5,
+          radiusMaxPixels: 5,
+          opacity: layers.traffic.opacity ?? 0.9,
+          updateTriggers: {
+            getPosition: trafficData,
+            getFillColor: trafficData,
+          },
+        })
+      )
+    }
+
     return result
-  }, [layers, floodData, buildingData, gridData, decayData, dataCentreData, seaLevelRise, onFeatureClick])
+  }, [layers, floodData, buildingData, gridData, decayData, dataCentreData, trafficData, seaLevelRise, onFeatureClick])
 
   return (
     <DeckGL
@@ -214,6 +249,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
         if (p.score) lines.push(`Score: ${(p.score * 100).toFixed(0)}%`)
         if (p.capacity_mw) lines.push(`Capacity: ${p.capacity_mw} MW`)
         if (p.status) lines.push(`Status: ${p.status}`)
+        if (p.congestion != null && p.speed) lines.push(`Speed: ${Math.round(p.speed)} km/h (${Math.round(p.congestion * 100)}% congested)`)
         if (p.height) lines.push(`Height: ${p.height}m`)
         return {
           html: `<div style="padding:8px;max-width:300px">${lines.join('<br/>')}</div>`,
