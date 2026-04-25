@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
-import { Map } from 'react-map-gl/maplibre'
-import DeckGL from '@deck.gl/react'
+import { useMemo, useCallback } from 'react'
+import { Map, useControl } from 'react-map-gl/maplibre'
+import { MapboxOverlay } from '@deck.gl/mapbox'
 import { GeoJsonLayer, ColumnLayer, ScatterplotLayer } from '@deck.gl/layers'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useFloodData } from '../hooks/useFloodData'
@@ -11,6 +11,13 @@ import { useDataCentreData } from '../hooks/useDataCentreData'
 import { useTrafficData } from '../hooks/useTrafficData'
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+
+// Deck.gl overlay that renders inside MapLibre's GL context
+function DeckGLOverlay(props) {
+  const overlay = useControl(() => new MapboxOverlay(props))
+  overlay.setProps(props)
+  return null
+}
 
 export default function MapView({ viewState, onViewStateChange, layers, seaLevelRise, onFeatureClick }) {
   const floodData = useFloodData(seaLevelRise)
@@ -76,7 +83,6 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
 
     // Power Grid Layer
     if (layers.grid.enabled && gridData) {
-      // Power lines (render first, underneath substations)
       result.push(
         new GeoJsonLayer({
           id: 'grid-lines',
@@ -106,7 +112,6 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           }),
         })
       )
-      // Substations (on top of lines)
       result.push(
         new GeoJsonLayer({
           id: 'grid-substations',
@@ -168,7 +173,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
       )
     }
 
-    // Data Centre Opportunity Sites
+    // Data Centre Sites
     if (layers.datacentre.enabled && dataCentreData) {
       result.push(
         new ColumnLayer({
@@ -194,7 +199,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
       )
     }
 
-    // Traffic Simulation
+    // Traffic
     if (layers.traffic?.enabled && trafficData) {
       result.push(
         new ScatterplotLayer({
@@ -208,13 +213,12 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
             return 7
           },
           getFillColor: d => {
-            // Color by real congestion: green=free flow, yellow=moderate, red=congested
             const c = d.congestion ?? 0.2
-            if (c < 0.15) return [80, 220, 120, 220]   // green — free flow
-            if (c < 0.3) return [160, 230, 80, 210]     // light green
-            if (c < 0.5) return [255, 220, 50, 210]     // yellow — moderate
-            if (c < 0.7) return [255, 150, 30, 220]     // orange — slow
-            return [255, 60, 60, 230]                    // red — congested
+            if (c < 0.15) return [80, 220, 120, 220]
+            if (c < 0.3) return [160, 230, 80, 210]
+            if (c < 0.5) return [255, 220, 50, 210]
+            if (c < 0.7) return [255, 150, 30, 220]
+            return [255, 60, 60, 230]
           },
           radiusMinPixels: 1.5,
           radiusMaxPixels: 5,
@@ -230,40 +234,58 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
     return result
   }, [layers, floodData, buildingData, gridData, decayData, dataCentreData, trafficData, seaLevelRise, onFeatureClick])
 
+  const onMove = useCallback(evt => {
+    onViewStateChange(evt.viewState)
+  }, [onViewStateChange])
+
+  const getTooltip = useCallback(({ object }) => {
+    if (!object) return null
+    const p = object.properties || object
+    const lines = [`<strong>${p.name || p.type || p.building || 'Feature'}</strong>`]
+    if (p.source) lines.push(`Source: ${p.source}`)
+    if (p.voltage) lines.push(`Voltage: ${p.voltage}kV`)
+    if (p.operator) lines.push(`Operator: ${p.operator}`)
+    if (p.risk_level) lines.push(`Risk: ${p.risk_level}`)
+    if (p.annual_average_damage) lines.push(`Annual damage: ${p.annual_average_damage}`)
+    if (p.residential_at_risk_high) lines.push(`Properties at high risk: ${p.residential_at_risk_high.toLocaleString()}`)
+    if (p.score) lines.push(`Score: ${(p.score * 100).toFixed(0)}%`)
+    if (p.capacity_mw) lines.push(`Capacity: ${p.capacity_mw} MW`)
+    if (p.status) lines.push(`Status: ${p.status}`)
+    if (p.congestion != null && p.speed) lines.push(`Speed: ${Math.round(p.speed)} km/h (${Math.round(p.congestion * 100)}% congested)`)
+    if (p.height) lines.push(`Height: ${p.height}m`)
+    return {
+      html: `<div style="padding:8px;max-width:300px">${lines.join('<br/>')}</div>`,
+      style: {
+        backgroundColor: '#1e293b',
+        color: '#e2e8f0',
+        borderRadius: '8px',
+        fontSize: '13px',
+        border: '1px solid #334155',
+      }
+    }
+  }, [])
+
   return (
-    <DeckGL
-      viewState={viewState}
-      onViewStateChange={({ viewState }) => onViewStateChange(viewState)}
-      controller={true}
-      layers={deckLayers}
-      getTooltip={({ object }) => {
-        if (!object) return null
-        const p = object.properties || object
-        const lines = [`<strong>${p.name || p.type || p.building || 'Feature'}</strong>`]
-        if (p.source) lines.push(`Source: ${p.source}`)
-        if (p.voltage) lines.push(`Voltage: ${p.voltage}kV`)
-        if (p.operator) lines.push(`Operator: ${p.operator}`)
-        if (p.risk_level) lines.push(`Risk: ${p.risk_level}`)
-        if (p.annual_average_damage) lines.push(`Annual damage: ${p.annual_average_damage}`)
-        if (p.residential_at_risk_high) lines.push(`Properties at high risk: ${p.residential_at_risk_high.toLocaleString()}`)
-        if (p.score) lines.push(`Score: ${(p.score * 100).toFixed(0)}%`)
-        if (p.capacity_mw) lines.push(`Capacity: ${p.capacity_mw} MW`)
-        if (p.status) lines.push(`Status: ${p.status}`)
-        if (p.congestion != null && p.speed) lines.push(`Speed: ${Math.round(p.speed)} km/h (${Math.round(p.congestion * 100)}% congested)`)
-        if (p.height) lines.push(`Height: ${p.height}m`)
-        return {
-          html: `<div style="padding:8px;max-width:300px">${lines.join('<br/>')}</div>`,
-          style: {
-            backgroundColor: '#1e293b',
-            color: '#e2e8f0',
-            borderRadius: '8px',
-            fontSize: '13px',
-            border: '1px solid #334155',
-          }
-        }
+    <Map
+      {...viewState}
+      onMove={onMove}
+      mapStyle={MAP_STYLE}
+      projection="globe"
+      fog={{
+        color: '#0f172a',
+        'high-color': '#1e293b',
+        'horizon-blend': 0.05,
+        'space-color': '#0a0e1a',
+        'star-intensity': 0.6,
       }}
+      style={{ width: '100%', height: '100%' }}
+      antialias
     >
-      <Map mapStyle={MAP_STYLE} />
-    </DeckGL>
+      <DeckGLOverlay
+        layers={deckLayers}
+        getTooltip={getTooltip}
+        interleaved
+      />
+    </Map>
   )
 }
