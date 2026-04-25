@@ -135,6 +135,13 @@ function getCoords(v, roads) {
 
 function getPosition(v, roads) {
   const coords = getCoords(v, roads)
+  if (!coords || coords.length < 2) return null
+  // Clamp seg to valid range
+  const maxSeg = coords.length - 2
+  if (v.seg > maxSeg) v.seg = maxSeg
+  if (v.seg < 0) v.seg = 0
+  if (v.t > 1) v.t = 1
+  if (v.t < 0) v.t = 0
   const a = coords[v.seg]
   const b = coords[v.seg + 1]
   if (!a || !b) return null
@@ -148,35 +155,73 @@ function segLen(a, b) {
 function advanceVehicle(v, roads, junctions) {
   const coords = getCoords(v, roads)
   const maxSeg = coords.length - 2
-  if (maxSeg < 0) { Object.assign(v, createVehicle(roads, null)); return }
+
+  if (maxSeg < 0) {
+    resetVehicle(v, roads)
+    return
+  }
+
+  // Clamp before reading
+  if (v.seg > maxSeg) v.seg = maxSeg
+  if (v.seg < 0) v.seg = 0
+
   const a = coords[v.seg]
   const b = coords[v.seg + 1]
-  if (!a || !b) { Object.assign(v, createVehicle(roads, null)); return }
+  if (!a || !b) {
+    resetVehicle(v, roads)
+    return
+  }
+
   const len = segLen(a, b)
   v.t += len > 0 ? v.speed / len : 1
-  while (v.t >= 1 && v.seg < maxSeg) { v.t -= 1; v.seg++ }
+
+  while (v.t >= 1 && v.seg < maxSeg) {
+    v.t -= 1
+    v.seg++
+  }
+
+  // Reached end of road
   if (v.t >= 1) {
+    v.t = 0.999 // keep valid position at end until we transition
+
     const endPt = coords[coords.length - 1]
     const k = junctions.toKey(endPt)
     const entries = junctions.index.get(k)
+
     if (entries && entries.length > 1) {
       const candidates = entries.filter(e => e.road !== v.roadIdx && e.road !== v.prevRoadIdx)
       const pool = candidates.length > 0 ? candidates : entries.filter(e => e.road !== v.roadIdx)
       if (pool.length > 0) {
         const pick = pool[Math.floor(Math.random() * pool.length)]
-        const nr = roads[pick.road]
-        const mid = nr.c[Math.floor(nr.c.length / 2)]
         v.prevRoadIdx = v.roadIdx
         v.roadIdx = pick.road
         v.forward = pick.forward
-        v.seg = 0; v.t = 0
-        v.roadType = nr.h
+        v.seg = 0
+        v.t = 0
+        v.roadType = roads[pick.road].h
         return
       }
     }
-    const prev = v.roadIdx
-    Object.assign(v, createVehicle(roads, null))
-    v.prevRoadIdx = prev
+
+    // Dead end — respawn
+    resetVehicle(v, roads)
+  }
+}
+
+function resetVehicle(v, roads) {
+  const prev = v.roadIdx
+  const nv = createVehicle(roads, null)
+  Object.assign(v, nv)
+  v.prevRoadIdx = prev
+  // Ensure valid starting position
+  const coords = getCoords(v, roads)
+  const maxSeg = coords.length - 2
+  if (maxSeg > 0) {
+    v.seg = Math.floor(Math.random() * maxSeg)
+    v.t = Math.random()
+  } else {
+    v.seg = 0
+    v.t = 0
   }
 }
 
@@ -232,15 +277,17 @@ export function useTrafficData() {
       function tick() {
         if (cancelled) return
         const { roads, junctions, vehicles, congestionLookup } = stateRef.current
-        const pts = new Array(vehicles.length)
+        const pts = []
         for (let i = 0; i < vehicles.length; i++) {
           advanceVehicle(vehicles[i], roads, junctions)
           const pos = getPosition(vehicles[i], roads)
-          pts[i] = {
-            position: pos,
-            speed: vehicles[i].realSpeed,
-            congestion: vehicles[i].congestion,
-            roadType: vehicles[i].roadType,
+          if (pos) {
+            pts.push({
+              position: pos,
+              speed: vehicles[i].realSpeed,
+              congestion: vehicles[i].congestion,
+              roadType: vehicles[i].roadType,
+            })
           }
         }
         setPositions(pts)
