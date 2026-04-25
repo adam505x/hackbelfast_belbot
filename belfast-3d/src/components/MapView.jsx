@@ -208,6 +208,8 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           getPosition: d => d.position,
           getRadius: 3,
           radiusUnits: 'pixels',
+          billboard: false,
+          antialiasing: false,
           getFillColor: d => {
             const c = d.congestion ?? 0.2
             if (c < 0.15) return [80, 220, 120, 220]
@@ -217,6 +219,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
             return [255, 60, 60, 230]
           },
           opacity: layers.traffic.opacity ?? 0.9,
+          parameters: { depthTest: false },
           updateTriggers: {
             getPosition: trafficData,
             getFillColor: trafficData,
