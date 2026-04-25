@@ -6,6 +6,8 @@ const UDI_PERIODS = [
   { value: '2016', label: '2016', desc: 'Mid-recovery period' },
   { value: '2021', label: '2021', desc: 'Census 2021 — post-COVID' },
   { value: '2025', label: '2025', desc: 'Current — dereliction at 33%' },
+  { value: '2027', label: '2027', desc: 'Predicted — ML forecast' },
+  { value: '2029', label: '2029', desc: 'Predicted — ML forecast' },
 ]
 
 export default function LayerPanel({
@@ -81,7 +83,7 @@ export default function LayerPanel({
           <input
             type="range"
             min="0"
-            max="6"
+            max="8"
             step="1"
             value={UDI_PERIODS.findIndex(p => p.value === udiPeriod)}
             onChange={e => onUdiPeriodChange(UDI_PERIODS[parseInt(e.target.value)].value)}
