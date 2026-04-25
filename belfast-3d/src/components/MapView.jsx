@@ -57,11 +57,11 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           getFillColor: f => {
             const score = f.properties.udi ?? 0.5
             // Red gradient: low decay = transparent green-ish, high decay = solid red
-            if (score < 0.2) return [40, 180, 80, 60]
-            if (score < 0.35) return [120, 200, 60, 90]
-            if (score < 0.45) return [240, 200, 40, 120]
+            if (score < 0.20) return [40, 180, 80, 60]
+            if (score < 0.30) return [120, 200, 60, 90]
+            if (score < 0.42) return [240, 200, 40, 120]
             if (score < 0.55) return [240, 140, 30, 150]
-            if (score < 0.65) return [220, 60, 30, 180]
+            if (score < 0.66) return [220, 60, 30, 180]
             return [180, 20, 20, 220]
           },
           getLineColor: [255, 255, 255, 40],
