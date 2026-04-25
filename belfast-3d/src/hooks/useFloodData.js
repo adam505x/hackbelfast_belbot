@@ -153,48 +153,96 @@ export function useFloodData(seaLevelRise = 0) {
       })
     }
 
-    // Area-based coastal/tidal flood zones (low-lying reclaimed land)
+    // Area-based coastal/tidal flood zones
+    // Polygons traced from OSM coastline data — land side only
+    // Coastline reference points verified against OSM natural=coastline
     const AREA_ZONES = [
       {
+        // Queens Island / Titanic Quarter — reclaimed land between Lagan and Musgrave Channel
+        // West boundary: Lagan river. East boundary: Musgrave Channel. Land only.
         name: 'Titanic Quarter — Queens Island',
         risk: 'high', source: 'Tidal/Coastal', base: 1.0,
         coords: [
-          [-5.9105, 54.6056], [-5.9050, 54.6057], [-5.9000, 54.6070],
-          [-5.8960, 54.6090], [-5.8940, 54.6110], [-5.8960, 54.6130],
-          [-5.9010, 54.6130], [-5.9060, 54.6110], [-5.9100, 54.6090],
-          [-5.9120, 54.6075], [-5.9105, 54.6056],
+          // South tip (near Lagan Weir)
+          [-5.9115, 54.6057], [-5.9100, 54.6060],
+          // West coast (Lagan side) going north
+          [-5.9085, 54.6066], [-5.9050, 54.6080], [-5.9020, 54.6095],
+          [-5.9000, 54.6105], [-5.8983, 54.6103],
+          // North end (near Victoria Channel)
+          [-5.8960, 54.6100], [-5.8940, 54.6105],
+          // East coast (Musgrave Channel side) going south
+          [-5.8928, 54.6095], [-5.8920, 54.6085], [-5.8930, 54.6070],
+          [-5.8960, 54.6065], [-5.9000, 54.6060],
+          // Back to start
+          [-5.9050, 54.6058], [-5.9115, 54.6057],
         ],
       },
       {
-        name: 'Belfast Harbour — Docklands',
+        // Harbour estate — west side of harbour, Pollock/York/Barnett docks
+        // Bounded by coastline on east, Duncrue Street on west
+        name: 'Belfast Harbour — West Docks',
         risk: 'high', source: 'Tidal/Coastal', base: 0.5,
         coords: [
-          [-5.9190, 54.6110], [-5.9160, 54.6120], [-5.9160, 54.6155],
-          [-5.9170, 54.6180], [-5.9130, 54.6200], [-5.9090, 54.6230],
-          [-5.9050, 54.6260], [-5.9000, 54.6290], [-5.8960, 54.6290],
-          [-5.8920, 54.6280], [-5.8890, 54.6310], [-5.8870, 54.6280],
-          [-5.8900, 54.6230], [-5.8940, 54.6190], [-5.8970, 54.6160],
-          [-5.9000, 54.6140], [-5.9050, 54.6120], [-5.9100, 54.6110],
-          [-5.9150, 54.6105], [-5.9190, 54.6110],
+          // South (near Clarendon Dock)
+          [-5.9186, 54.6128], [-5.9156, 54.6158],
+          // West coast going north (from OSM coastline)
+          [-5.9150, 54.6170], [-5.9140, 54.6190],
+          [-5.9120, 54.6210], [-5.9100, 54.6230],
+          [-5.9090, 54.6260],
+          // North end
+          [-5.9070, 54.6280], [-5.9068, 54.6326],
+          // Inland boundary (Duncrue St / Dargan Rd)
+          [-5.9130, 54.6320], [-5.9170, 54.6280],
+          [-5.9200, 54.6240], [-5.9210, 54.6200],
+          [-5.9200, 54.6160], [-5.9186, 54.6128],
         ],
       },
       {
+        // East harbour — oil terminals, container port
+        // Bounded by Musgrave Channel on west, Belfast Lough on east
+        name: 'Belfast Harbour — East Terminal',
+        risk: 'high', source: 'Tidal/Coastal', base: 0.5,
+        coords: [
+          // South (near Victoria Park)
+          [-5.8880, 54.6104], [-5.8870, 54.6130],
+          // East coast going north (from OSM coastline)
+          [-5.8870, 54.6155], [-5.8870, 54.6190],
+          [-5.8890, 54.6225], [-5.8928, 54.6223],
+          // North
+          [-5.8965, 54.6232], [-5.8950, 54.6260],
+          // Inland boundary
+          [-5.8920, 54.6240], [-5.8900, 54.6200],
+          [-5.8890, 54.6160], [-5.8885, 54.6120],
+          [-5.8880, 54.6104],
+        ],
+      },
+      {
+        // North Foreshore — former landfill, very low-lying
         name: 'North Foreshore — Dargan Road',
         risk: 'medium', source: 'Tidal', base: 1.8,
         coords: [
-          [-5.9185, 54.6300], [-5.9130, 54.6310], [-5.9090, 54.6330],
-          [-5.9060, 54.6360], [-5.9090, 54.6380], [-5.9140, 54.6370],
-          [-5.9190, 54.6350], [-5.9210, 54.6320], [-5.9185, 54.6300],
+          // From OSM coastline around North Foreshore
+          [-5.9068, 54.6326], [-5.9050, 54.6350],
+          [-5.9020, 54.6380], [-5.8990, 54.6400],
+          [-5.8950, 54.6390], [-5.8900, 54.6370],
+          [-5.8870, 54.6350], [-5.8870, 54.6320],
+          [-5.8900, 54.6300], [-5.8950, 54.6290],
+          [-5.8986, 54.6301], [-5.9068, 54.6326],
         ],
       },
       {
+        // Sydenham — low-lying area east of harbour, includes airport
         name: 'Sydenham — Belfast City Airport',
         risk: 'low', source: 'Tidal', base: 3.0,
         coords: [
-          [-5.8870, 54.6090], [-5.8820, 54.6110], [-5.8770, 54.6140],
-          [-5.8720, 54.6170], [-5.8700, 54.6200], [-5.8730, 54.6220],
-          [-5.8780, 54.6200], [-5.8830, 54.6170], [-5.8870, 54.6140],
-          [-5.8890, 54.6110], [-5.8870, 54.6090],
+          // From OSM coastline along east bank
+          [-5.8809, 54.6090], [-5.8789, 54.6094],
+          [-5.8750, 54.6120], [-5.8720, 54.6160],
+          [-5.8700, 54.6200], [-5.8663, 54.6353],
+          // Inland boundary (Sydenham Bypass / A2)
+          [-5.8700, 54.6340], [-5.8750, 54.6280],
+          [-5.8780, 54.6220], [-5.8800, 54.6160],
+          [-5.8810, 54.6110], [-5.8809, 54.6090],
         ],
       },
     ]
