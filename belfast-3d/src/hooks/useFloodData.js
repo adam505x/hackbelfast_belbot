@@ -50,51 +50,52 @@ function bufferLine(coords, width) {
   return [...left, ...right, left[0]]
 }
 
-// Slice a coordinate array between two lat values (approximate)
-function sliceByLat(coords, minLat, maxLat) {
-  return coords.filter(c => c[1] >= minLat && c[1] <= maxLat)
+// Slice a coordinate array by index range (no overlaps)
+function sliceByIndex(coords, startIdx, endIdx) {
+  return coords.slice(startIdx, endIdx + 1)
 }
 
-// Flood zone definitions referencing real river paths
+// Flood zone definitions referencing real river paths by index ranges
+// Lagan indices: 0=upstream, 127=Stranmillis, 158=Ormeau, 180=Weir, 184=Titanic, 187=Harbour, 189=end
 const ZONE_DEFS = [
   {
     name: 'River Lagan — Stranmillis to Ormeau',
-    river: 'Lagan', minLat: 54.565, maxLat: 54.590,
+    river: 'Lagan', startIdx: 127, endIdx: 158,
     risk: 'high', source: 'Fluvial', base: 2.0, width: 0.0010,
   },
   {
     name: 'River Lagan — Ormeau to Lagan Weir',
-    river: 'Lagan', minLat: 54.588, maxLat: 54.602,
+    river: 'Lagan', startIdx: 158, endIdx: 180,
     risk: 'high', source: 'Fluvial/Tidal', base: 1.5, width: 0.0013,
   },
   {
-    name: 'River Lagan — Weir to Belfast Lough',
-    river: 'Lagan', minLat: 54.600, maxLat: 54.618,
+    name: 'River Lagan — Weir to Titanic Quarter',
+    river: 'Lagan', startIdx: 180, endIdx: 187,
     risk: 'high', source: 'Tidal', base: 1.0, width: 0.0018,
   },
   {
-    name: 'Belfast Harbour — Docks',
-    river: 'Lagan', minLat: 54.616, maxLat: 54.635,
-    risk: 'high', source: 'Tidal', base: 0.5, width: 0.0022,
+    name: 'Belfast Harbour — Docks to Lough',
+    river: 'Lagan', startIdx: 187, endIdx: 189,
+    risk: 'high', source: 'Tidal/Coastal', base: 0.5, width: 0.0025,
   },
   {
     name: 'Connswater — East Belfast',
-    river: 'Connswater', minLat: 54.590, maxLat: 54.615,
+    river: 'Connswater', startIdx: 0, endIdx: -1,
     risk: 'medium', source: 'Fluvial', base: 2.5, width: 0.0008,
   },
   {
     name: 'Blackstaff River — Source to Bog Meadows',
-    river: 'Blackstaff', minLat: 54.568, maxLat: 54.588,
+    river: 'Blackstaff', startIdx: 0, endIdx: 60,
     risk: 'medium', source: 'Fluvial', base: 4.0, width: 0.0007,
   },
   {
     name: 'Blackstaff River — Bog Meadows to City Centre',
-    river: 'Blackstaff', minLat: 54.586, maxLat: 54.600,
+    river: 'Blackstaff', startIdx: 60, endIdx: -1,
     risk: 'medium', source: 'Fluvial/Pluvial', base: 3.5, width: 0.0009,
   },
   {
     name: 'Farset River — Culverted City Centre',
-    river: 'Farset', minLat: 54.604, maxLat: 54.608,
+    river: 'Farset', startIdx: 0, endIdx: -1,
     risk: 'low', source: 'Pluvial', base: 5.0, width: 0.0005,
   },
 ]
@@ -123,8 +124,9 @@ export function useFloodData(seaLevelRise = 0) {
       const riverCoords = rivers[zone.river]
       if (!riverCoords || riverCoords.length < 2) continue
 
-      // Slice the river to this zone's extent
-      const sliced = sliceByLat(riverCoords, zone.minLat, zone.maxLat)
+      // Slice the river by index range (no overlaps)
+      const end = zone.endIdx === -1 ? riverCoords.length - 1 : zone.endIdx
+      const sliced = sliceByIndex(riverCoords, zone.startIdx, end)
       if (sliced.length < 2) continue
 
       const riseExpansion = Math.max(0, seaLevelRise * 0.0003)
