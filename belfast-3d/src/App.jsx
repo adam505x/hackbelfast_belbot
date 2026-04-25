@@ -11,7 +11,7 @@ const INITIAL_LAYERS = {
   grid: { enabled: false, label: '⚡ Power Grid', color: '#eab308', opacity: 0.7 },
   datacentre: { enabled: false, label: '🖥️ Data Centre Sites', color: '#8b5cf6', opacity: 0.7 },
   decay: { enabled: false, label: '🏚️ Urban Decay', color: '#ef4444', opacity: 0.6 },
-  traffic: { enabled: true, label: '🚗 Live Traffic', color: '#06b6d4', opacity: 0.9 },
+  traffic: { enabled: true, label: '🚗 Live Traffic (TomTom)', color: '#06b6d4', opacity: 0.9 },
   buildings: { enabled: true, label: '🏢 3D Buildings', color: '#64748b', opacity: 0.8 },
 }
 

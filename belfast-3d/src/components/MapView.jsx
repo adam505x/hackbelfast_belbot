@@ -208,18 +208,20 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
             return 7
           },
           getFillColor: d => {
-            const s = d.speed
-            // Fast = white/blue, slow = orange/red
-            if (s > 2.0) return [200, 220, 255, 220]
-            if (s > 1.5) return [160, 200, 255, 210]
-            if (s > 1.0) return [255, 220, 100, 200]
-            return [255, 140, 60, 200]
+            // Color by real congestion: green=free flow, yellow=moderate, red=congested
+            const c = d.congestion ?? 0.2
+            if (c < 0.15) return [80, 220, 120, 220]   // green — free flow
+            if (c < 0.3) return [160, 230, 80, 210]     // light green
+            if (c < 0.5) return [255, 220, 50, 210]     // yellow — moderate
+            if (c < 0.7) return [255, 150, 30, 220]     // orange — slow
+            return [255, 60, 60, 230]                    // red — congested
           },
           radiusMinPixels: 1.5,
           radiusMaxPixels: 5,
           opacity: layers.traffic.opacity ?? 0.9,
           updateTriggers: {
             getPosition: trafficData,
+            getFillColor: trafficData,
           },
         })
       )
@@ -247,6 +249,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
         if (p.score) lines.push(`Score: ${(p.score * 100).toFixed(0)}%`)
         if (p.capacity_mw) lines.push(`Capacity: ${p.capacity_mw} MW`)
         if (p.status) lines.push(`Status: ${p.status}`)
+        if (p.congestion != null && p.speed) lines.push(`Speed: ${Math.round(p.speed)} km/h (${Math.round(p.congestion * 100)}% congested)`)
         if (p.height) lines.push(`Height: ${p.height}m`)
         return {
           html: `<div style="padding:8px;max-width:300px">${lines.join('<br/>')}</div>`,
