@@ -1,0 +1,3 @@
+[submodule "urbandecay_belbot"]
+	path = urbandecay_belbot
+	url = git@github.com:adam505x/urbandecay_belbot.git
