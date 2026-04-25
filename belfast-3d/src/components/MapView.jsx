@@ -74,41 +74,7 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
 
     // Power Grid Layer
     if (layers.grid.enabled && gridData) {
-      // Substations
-      result.push(
-        new GeoJsonLayer({
-          id: 'grid-substations',
-          data: gridData.substations,
-          filled: true,
-          stroked: true,
-          pointType: 'circle',
-          getPointRadius: f => {
-            const v = f.properties.voltage
-            if (v >= 275) return 250
-            if (v >= 110) return 150
-            if (v >= 33) return 80
-            return 40
-          },
-          pointRadiusMinPixels: 3,
-          pointRadiusMaxPixels: 20,
-          getFillColor: f => {
-            const v = f.properties.voltage
-            if (v >= 275) return [255, 220, 50, 220]
-            if (v >= 110) return [255, 180, 30, 200]
-            if (v >= 33) return [234, 160, 8, 180]
-            return [200, 140, 50, 150]
-          },
-          getLineColor: [250, 204, 21, 255],
-          getLineWidth: 2,
-          opacity: layers.grid.opacity,
-          pickable: true,
-          onClick: ({ object }) => object && onFeatureClick({
-            type: 'substation',
-            properties: object.properties,
-          }),
-        })
-      )
-      // Power lines
+      // Power lines (render first, underneath substations)
       result.push(
         new GeoJsonLayer({
           id: 'grid-lines',
@@ -123,17 +89,50 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
           },
           getLineWidth: f => {
             const v = f.properties.voltage || 0
-            if (v >= 275) return 80
-            if (v >= 110) return 40
-            if (v >= 33) return 15
-            return 5
+            if (v >= 275) return 120
+            if (v >= 110) return 60
+            if (v >= 33) return 25
+            return 10
           },
           widthMinPixels: 1,
-          widthMaxPixels: 10,
+          widthScale: 1,
           opacity: layers.grid.opacity,
           pickable: true,
           onClick: ({ object }) => object && onFeatureClick({
             type: 'power_line',
+            properties: object.properties,
+          }),
+        })
+      )
+      // Substations (on top of lines)
+      result.push(
+        new GeoJsonLayer({
+          id: 'grid-substations',
+          data: gridData.substations,
+          filled: true,
+          stroked: true,
+          pointType: 'circle',
+          getPointRadius: f => {
+            const v = f.properties.voltage
+            if (v >= 275) return 300
+            if (v >= 110) return 180
+            if (v >= 33) return 90
+            return 50
+          },
+          pointRadiusMinPixels: 2,
+          getFillColor: f => {
+            const v = f.properties.voltage
+            if (v >= 275) return [255, 240, 80, 240]
+            if (v >= 110) return [255, 200, 40, 220]
+            if (v >= 33) return [234, 170, 20, 200]
+            return [200, 140, 50, 160]
+          },
+          getLineColor: [30, 30, 30, 200],
+          getLineWidth: 1,
+          opacity: layers.grid.opacity,
+          pickable: true,
+          onClick: ({ object }) => object && onFeatureClick({
+            type: 'substation',
             properties: object.properties,
           }),
         })
