@@ -1,4 +1,4 @@
-# Belfast 3D — Urban Decay Intelligence Platform
+# DelayDecay — Urban Decay Intelligence Platform
 
 Interactive 3D city intelligence platform tracking urban decay across Belfast's 174 Super Output Areas over 9 time periods (2001–2029), combining 18+ datasets with ML-powered predictions to guide urban regeneration policy.
 
