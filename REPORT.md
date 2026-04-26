@@ -3,6 +3,86 @@
 
 ---
 
+
+**Frontend Architecture:**
+
+State management (App.jsx) is entirely local React state — no Redux, no Context API. The layer toggle object (INITIAL_LAYERS) is the single source of truth, passed as props down to both MapView (for rendering) and LayerPanel (for controls). The sea level rise value (seaLevelRise: 0–5m) and UDI period ('2001'–'2029') are also state at the root and flow down to the relevant hooks and components.
+
+**Map rendering uses a two-layer stack:**
+
+react-map-gl/maplibre renders the vector basemap MapboxOverlay from mounts Deck.gl into MapLibre's canvas via a useControl hook. All Deck.gl layers are computed in a single useMemo in MapView.jsx and rebuilt whenever any dependency is mutated. The order of result.push(...) calls controls draw order buildings first, UDI overlay second so it's on top for click-picking, then flood, grid, etc ensuring we have our assests being loaded in correctly and quickly post mutation despite having heavy 3 surfaces being rendered
+
+Data loading pattern is consistent across all hooks useEffect with a cancellation flag triggers a fetch() on mount, sets the raw state and a second useMemo transforms the raw data into the Deck.gl ready format. This means transformations are not repeated on re-renders, only when the raw data or a key parameter is mutated
+
+**Flood Layer Computed Geometry:**
+
+The flood data is not fetched as polygons it is computed client-side from river coordinate arrays. useFloodData.js fetches belfast-rivers.json (which stores river centerlines as coordinate arrays indexed by river name) and then:
+
+we slice each river by index range to get the relevant segment and then we buffer each line into a polygon using bufferLine for each point we then compute the unit normal to the tangent vector, offsets left and right by width + seaLevelRise * 0.0003, concatenates left + reversed right ring and then we scale the buffer width with sea level rise so zones visually expand. To compute effective risk if seaLevelRise > zone.base, the zone upgrades to 'high' risk
+
+The live DfI ArcGIS REST call (fetchAPSFRStats) only fetches statistics (settlement name, high-probability property count, annual average damage) to populate click-panel data not the geometries themselves
+
+**Traffic Simulation:**
+The traffic layer is a particle simulation not a heatmap. Implementation in useTrafficData.js. Heatmap is useful for visulization but seems unhelpful in practicality. It felt clunky messed with the fludity of the city I was looking for
+
+To load the different roads at once we load belfast-roads.json which are the compact road segments:
+We then buildt a junction index mapping endpoint coordinates to connected road segments used for vehicle routing at intersections, ran into issues here with cars constantly going out of bounds so this required a bit of tuningjust because since the roads were slices and often these slices would overhang into space they were not meant to out into eachother
+
+We then used the TomTom Flow API for a 5×4 grid of sample points across Belfast, gets currentSpeed/freeFlowSpeed for each, builds a congestion lookup function (nearest-segment spatial search)
+Spawns 1,200 vehicle objects, each tracking {roadIdx, forward, seg, t, speed, congestion} and synced this using their traffic report for befast for the day, it is hard to simulate individual cars working in the grid but it is not difficult to have cars appromimate the pattern observed from the pulled traffic data, cut down API calls rendering cars around the clusters and simulating activity then wasting time looking for satellite tracking just to add semi-accurate moving cars
+
+setInterval(tick, 50ms) allows us to move every vehicle and increments the cars on the map by speed / segmentLength, rolls to next segment when t >= 1, navigates junctions by picking the correct connecting road towards the cluster the car is assigned to excluding the road just traveled breadcrumb avoidance, we want to make it look natural to the user
+At road ends with no exit: resetVehicle() respawns elsewhere close to the cluster
+Every 60s: re-fetches TomTom, updates congestion on all vehicles in-place
+Vehicle speed is converted: km/h → degrees/second → degrees/tick, scaled for visual legibility on screen.
+
+**Scoring Engine:**
+Implements five sub scores for multiple different assests visible on the map reflecting different core external weights that would have or could influence the deprivation improvement or worsening in a over in the future. These are filters enabled from the popout on the left side of the screen and serve as a tool for the user to better understand the data
+
+calc_flood_safety: This is for the flood areas that could be at risk and has 6 hardcoded flood zone centroids, computes haversine_approx distance, if within zone.radius * 111.32 km computes overlap factor (1 - dist/radius), scales by zone risk. Returns 1.0 - max_risk.
+calc_grid_proximity: This is for the power grid and it iterates 9 substations, computes distance, scores as exp(-dist/1.5) * (0.4 + 0.6 * voltage_weight). The 1.5 km decay constant means score halves roughly every ~1km. Takes the maximum across all substations.
+calc_fibre_access: Straight line distance to city centre and harbour, exp(-best/2.0). This exists but we never ended up using or tuning it since became irrellavent
+Land availability: Lookup table {derelict: 0.9, brownfield: 0.85, industrial: 0.7, greenfield: 0.3, unknown: 0.5}.
+Deprivation bonus: min(1.0, deprivation_score * 1.2) — slightly amplified to give deprived areas a stronger incentive signal so they can be picked up by our thresholds and have a more intuitave graphic
+Composite = 0.30*flood + 0.25*grid + 0.15*fibre + 0.15*land + 0.15*deprivation. The /batch endpoint calls /score in a loop and sorts by composite descending
+
+**UDI Data Pipeline:**
+Input data sources by running provided scripts, will pull from NIE sources and clean/normalize everything
+
+soa_boundaries_belfast.geojson: 174 SOA polygons from NISRA shapefile reprojected to EPSG:4326
+nimdm_belfast.csv: 174 rows with 8 domain ranks (MDM, Income, Employment, Health, Education, Access, Living Env, Crime) from NIMDM 2017
+census_2001_belfast.csv, census_2011_belfast.csv, census_2021_belfast.csv: population counts
+crime_belfast.csv: 207,773 PSNI street-level records
+harni_belfast.geojson + listed_buildings_belfast.geojson: heritage/dereliction proxies
+housing_belfast.csv: NI HPI house prices
+Scoring: four pillars per SOA per 7 periods
+
+**Pillar	Weight	Method:**
+
+The idea of this was to find some composite UDI around some fo the core metrics that could affect urban decay, we identified those as the below:
+
+Demographic	0.25: NIMDM health rank as an age proxy; population change between census anchors (NIE dataset '01, '11, '21); interpolated for intermediate years; 60/40 blend pop-change/age-proxy
+Crime	0.25: NIMDM crime rank scaled by period_crime_rate / peak_rate (143 per 1k in 2001 = peak)
+Dereliction: 0.30	0.50 * harni_count_norm + 0.30 * harni/listed_ratio_norm + 0.20 * total_norm; static 2001–2016, scaled ×1.40 for 2021, ×1.65 for 2025
+Housing: 0.20 NIMDM living-environment rank, damped toward 0.5 for earlier periods (0.30×base in 2001 → 1.00×base in 2025)
+All per pillar raw values are min-max normalized within each period across all 174 SOAs
+
+The idea of this was to find some composite UDI = 0.30 × demographic + 0.25 × crime + 0.25 × dereliction + 0.20 × housing
+
+That composite number is what determines the colour on the map ranging from the 6 thresholds that are visible to use ranging from Green all the way to red. The individual pillar scores are stored in the GeoJSON so the tooltip can show the breakdown when the user clicks "this SOA is red because crime is 78% but housing is only 35%". These also feed into the Random Forest model as features for the 2027/2029 predictions so we have SOA level analysis as a breakdown
+
+
+**ML prediction blended model for 2027/2029:**
+
+Linear (60%): Per-SOA weighted linear regression using np.polyfit with sample weights exponentially increasing toward recent years so 2016–2025 drives the extrapolation
+Random Forest (40%): RandomForestRegressor trained on all 174×7=1,218 samples; features = [4 pillar scores, mdm_rank/890, crime_rank/890, listed_count, harni_count, year, lag_udi]
+Spatial smoothing: 0.80 * own + 0.20 * mean(3-nearest-neighbours) — prevents isolated prediction spikes
+Momentum constraint: If udi_2025 - udi_2021 > 0.005, prediction is floored at udi_2025 + dampened_trend to prevent optimistic reversals
+Baseline acceleration: +0.004 * years_from_2025 applied universally; +0.0027/yr extra for SOAs with udi_2025 > 0.45
+Output is written back into the same belfast-udi.json with udi_2027/udi_2029 keys added per feature.
+
+
+
 ## 1. Platform Overview
 
 Belfast 3D is a browser-based geospatial intelligence platform that visualises urban decay across Belfast's 174 Super Output Areas (SOAs) over 9 time periods (2001–2029), combining census data, crime statistics, heritage records, housing data, and machine learning predictions into an interactive 3D map.
@@ -199,6 +279,7 @@ Belfast 3D is a browser-based geospatial intelligence platform that visualises u
 ---
 
 ## 6. Topological Layer Stack
+
 
 Layers render in this order (bottom to top):
 
