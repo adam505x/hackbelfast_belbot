@@ -10,7 +10,7 @@ const COMPANIES = [
   { name: 'Kainos', sector: 'Technology', employees: '2800+', est: 1986, idx: 465 },
   { name: 'Allstate NI', sector: 'Technology', employees: '2400+', est: 1999, idx: 45925 },
   { name: 'Concentrix', sector: 'Technology', employees: '3500+', est: 2014, idx: 39217 },
-  { name: 'Citigroup', sector: 'Finance', employees: '3000+', est: 2005, idx: 100809 }, // City Quays
+  { name: 'Citigroup', sector: 'Finance', employees: '3000+', est: 2006, idx: 100809 }, // City Quays
   { name: 'FinTrU', sector: 'FinTech', employees: '1500+', est: 2013, idx: 38771 },
   { name: 'Danske Bank', sector: 'Banking', employees: '1800+', est: 1824, idx: 39074 }, // as Northern Bank
   { name: 'Spirit AeroSystems', sector: 'Aerospace', employees: '3500+', est: 1989, idx: 99991 }, // as Bombardier/Shorts
@@ -34,6 +34,7 @@ const COMPANIES = [
   { name: 'Linen Hall Library', sector: 'Culture', employees: '50+', est: 1788, idx: 42925 },
   { name: 'Rapid7', sector: 'Cybersecurity', employees: '400+', est: 2014, idx: 100976 },
   { name: 'Baker McKenzie', sector: 'Legal', employees: '300+', est: 2016, idx: 39074 },
+  { name: 'Microsoft', sector: 'Technology', employees: '500+', est: 2024, idx: 99974 }, // T13 building, Titanic Quarter
 ]
 
 export function useCompanyData(period) {
