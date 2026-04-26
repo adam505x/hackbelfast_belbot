@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function Sidebar({ children, infoContent }) {
+export default function Sidebar({ children, infoContent, onCentre }) {
   const [collapsed, setCollapsed] = useState(false)
 
   return (
@@ -21,13 +21,21 @@ export default function Sidebar({ children, infoContent }) {
 
       {!collapsed && (
         <div className="h-full w-80 bg-slate-950/95 backdrop-blur-md border-r border-slate-800/60 overflow-y-auto p-3 space-y-2">
-          <div className="mb-4 px-1">
-            <h1 className="text-sm font-mono font-bold text-slate-200 uppercase tracking-widest">
-              Belfast 3D
-            </h1>
-            <p className="text-[10px] font-mono text-slate-500 mt-0.5 uppercase tracking-wider">
-              City Intelligence Platform
-            </p>
+          <div className="mb-4 px-1 flex items-center justify-between">
+            <div>
+              <h1 className="text-sm font-mono font-bold text-slate-200 uppercase tracking-widest">
+                Belfast 3D
+              </h1>
+              <p className="text-[10px] font-mono text-slate-500 mt-0.5 uppercase tracking-wider">
+                City Intelligence Platform
+              </p>
+            </div>
+            <button
+              onClick={onCentre}
+              className="text-[10px] font-mono font-bold text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700/40 rounded px-2 py-1.5 transition-colors"
+            >
+              Centre
+            </button>
           </div>
           {children}
           {infoContent}
