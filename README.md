@@ -1,4 +1,4 @@
-# Belfast 3D — City Intelligence Platform
+# DecayDelay — City Intelligence Platform
 
 Interactive 3D map of Belfast with four intelligence layers that cross-reference each other to find optimal development sites.
 
