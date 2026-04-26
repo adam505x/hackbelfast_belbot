@@ -3,17 +3,19 @@ import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
 import LayerPanel from './components/LayerPanel'
 import InfoPanel from './components/InfoPanel'
-import Legend from './components/Legend'
-import AIChatPanel from './components/AIChatPanel'
+import UDITimeline from './components/UDITimeline'
+import InsightsPanel from './components/InsightsPanel'
+import DetailModal from './components/DetailModal'
 
 const INITIAL_LAYERS = {
-  udi: { enabled: true, label: '📊 Urban Decay Index', color: '#ef4444', opacity: 0.55 },
-  flood: { enabled: false, label: '🌊 Flood Risk', color: '#3b82f6', opacity: 0.6 },
-  grid: { enabled: false, label: '⚡ Power Grid', color: '#eab308', opacity: 0.7 },
-  datacentre: { enabled: false, label: '🖥️ Data Centre Sites', color: '#8b5cf6', opacity: 0.7 },
-  decay: { enabled: false, label: '🏚️ Urban Decay (Ward)', color: '#ef4444', opacity: 0.6 },
-  traffic: { enabled: false, label: '🚗 Live Traffic (TomTom)', color: '#06b6d4', opacity: 0.9 },
-  buildings: { enabled: true, label: '🏢 3D Buildings', color: '#64748b', opacity: 0.8 },
+  udi: { enabled: true, label: 'Urban Decay Index', color: '#ef4444', opacity: 0.55 },
+  companies: { enabled: false, label: 'Top 50 Companies', color: '#a78bfa', opacity: 0.85 },
+  flood: { enabled: false, label: 'Flood Risk', color: '#3b82f6', opacity: 0.6 },
+  grid: { enabled: false, label: 'Power Grid', color: '#eab308', opacity: 0.7 },
+  datacentre: { enabled: false, label: 'Data Centre Sites', color: '#8b5cf6', opacity: 0.7 },
+  traffic: { enabled: false, label: 'Live Traffic', color: '#4ade80', opacity: 0.9 },
+  transit: { enabled: false, label: 'Bus Stops (Translink)', color: '#f59e0b', opacity: 0.8 },
+  buildings: { enabled: true, label: '3D Buildings', color: '#64748b', opacity: 0.8 },
 }
 
 export default function App() {
@@ -21,6 +23,8 @@ export default function App() {
   const [selectedFeature, setSelectedFeature] = useState(null)
   const [seaLevelRise, setSeaLevelRise] = useState(0)
   const [udiPeriod, setUdiPeriod] = useState('2025')
+  const [nightMode, setNightMode] = useState(true)
+  const [modalContent, setModalContent] = useState(null)
   const [viewState, setViewState] = useState({
     longitude: -5.9301,
     latitude: 54.5973,
@@ -43,6 +47,10 @@ export default function App() {
     }))
   }, [])
 
+  const infoContent = selectedFeature ? (
+    <InfoPanel feature={selectedFeature} onClose={() => setSelectedFeature(null)} />
+  ) : null
+
   return (
     <div className="relative w-full h-full">
       <MapView
@@ -51,30 +59,31 @@ export default function App() {
         layers={layers}
         seaLevelRise={seaLevelRise}
         udiPeriod={udiPeriod}
+        nightMode={nightMode}
         onFeatureClick={setSelectedFeature}
       />
-      <Sidebar>
+      <Sidebar infoContent={infoContent}>
         <LayerPanel
           layers={layers}
           onToggle={toggleLayer}
           onOpacityChange={setLayerOpacity}
           seaLevelRise={seaLevelRise}
           onSeaLevelChange={setSeaLevelRise}
-          udiPeriod={udiPeriod}
-          onUdiPeriodChange={setUdiPeriod}
+          nightMode={nightMode}
+          onNightModeChange={setNightMode}
         />
       </Sidebar>
-      {selectedFeature && (
-        <InfoPanel feature={selectedFeature} onClose={() => setSelectedFeature(null)} />
+
+      {layers.udi?.enabled && (
+        <>
+          <UDITimeline period={udiPeriod} onChange={setUdiPeriod} />
+          <InsightsPanel period={udiPeriod} onShowDetail={setModalContent} />
+        </>
       )}
-      <Legend layers={layers} />
-      <AIChatPanel
-        onLayerSuggestion={(layerKey) => {
-          if (layers[layerKey] && !layers[layerKey].enabled) {
-            toggleLayer(layerKey)
-          }
-        }}
-      />
+
+      {modalContent && (
+        <DetailModal content={modalContent} onClose={() => setModalContent(null)} />
+      )}
     </div>
   )
 }
