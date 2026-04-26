@@ -1,10 +1,10 @@
 # DelayDecay — Urban Decay Intelligence Platform
 
-Interactive 3D city intelligence platform tracking urban decay across Belfast's 174 Super Output Areas over 9 time periods (2001–2029), combining 18+ datasets with ML-powered predictions to guide urban regeneration policy.
+Interactive 3D city intelligence platform tracking urban decay across Belfast's 174 Super Output Areas over time periods (2001–2029), combining 18+ datasets with ML-powered predictions to guide urban regeneration policy.
 
 ## Layers
 
-- **Urban Decay Index** — SOA-level composite score (demographic decline, crime, dereliction, housing) across 9 time periods with timeline scrubber
+- **Urban Decay Index** — SOA-level composite score (demographic decline, crime, dereliction, housing) across time periods with timeline scrubber
 - **3D Buildings** — 125k extruded buildings with ~90 notable buildings tagged by construction year (appear/disappear with timeline)
 - **Top 50 Companies** — Major Belfast employers matched to actual building footprints, filtered by establishment year
 - **Bus Stops (Translink)** — 2,013 Metro/Ulsterbus stops from OpenDataNI with transit accessibility scoring per SOA
