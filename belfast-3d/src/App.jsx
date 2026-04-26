@@ -24,6 +24,7 @@ export default function App() {
   const [seaLevelRise, setSeaLevelRise] = useState(0)
   const [udiPeriod, setUdiPeriod] = useState('2025')
   const [nightMode, setNightMode] = useState(true)
+  const [centreRequested, setCentreRequested] = useState(0)
   const [modalContent, setModalContent] = useState(null)
   const [viewState, setViewState] = useState({
     longitude: -5.9301,
@@ -60,9 +61,10 @@ export default function App() {
         seaLevelRise={seaLevelRise}
         udiPeriod={udiPeriod}
         nightMode={nightMode}
+        centreRequested={centreRequested}
         onFeatureClick={setSelectedFeature}
       />
-      <Sidebar infoContent={infoContent}>
+      <Sidebar infoContent={infoContent} onCentre={() => setCentreRequested(c => c + 1)}>
         <LayerPanel
           layers={layers}
           onToggle={toggleLayer}

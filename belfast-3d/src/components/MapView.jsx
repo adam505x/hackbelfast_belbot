@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useRef } from 'react'
 import { Map, useControl } from 'react-map-gl/maplibre'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import { GeoJsonLayer, ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers'
@@ -22,7 +22,8 @@ function DeckGLOverlay({ layers }) {
   return null
 }
 
-export default function MapView({ viewState, onViewStateChange, layers, seaLevelRise, udiPeriod, nightMode, onFeatureClick }) {
+export default function MapView({ viewState, onViewStateChange, layers, seaLevelRise, udiPeriod, nightMode, centreRequested, onFeatureClick }) {
+  const mapRef = useRef(null)
   const floodData = useFloodData(seaLevelRise)
   const buildingData = useBuildingData(udiPeriod)
   const gridData = useGridData()
@@ -336,11 +337,31 @@ export default function MapView({ viewState, onViewStateChange, layers, seaLevel
     onViewStateChange(evt.viewState)
   }, [onViewStateChange])
 
+  // Smooth fly to Belfast centre when requested
+  const lastCentre = useRef(0)
+  if (centreRequested && centreRequested !== lastCentre.current) {
+    lastCentre.current = centreRequested
+    const map = mapRef.current?.getMap?.()
+    if (map) {
+      map.flyTo({
+        center: [-5.9301, 54.5973],
+        zoom: 12.2,
+        pitch: 45,
+        bearing: -17,
+        duration: 2000,
+        essential: true,
+      })
+    }
+  }
+
   return (
     <Map
+      ref={mapRef}
       {...viewState}
       onMove={onMove}
       mapStyle={mapStyle}
+      minZoom={7}
+      maxZoom={20}
       renderWorldCopies={false}
       maxTileCacheSize={200}
       style={{ width: '100%', height: '100%' }}
