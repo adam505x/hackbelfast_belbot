@@ -1,4 +1,4 @@
-# Belfast 3D — Urban Decay Intelligence Platform
+# DecayDelay — Urban Decay Intelligence Platform
 ## Full Technical Report
 
 ---
