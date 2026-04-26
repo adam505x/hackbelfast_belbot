@@ -35,6 +35,7 @@ const BUILDING_YEARS = {
   39313: 2020,  // voco hotel
   39549: 2005,  // Adelaide Exchange
   100097: 2015, // Premier Inn Titanic Quarter
+  99974: 2020,  // T13 Titanic Quarter (Microsoft from 2024)
   39532: 2017,  // The Vantage
   84258: 2016,  // Elms BT1 (student)
   40914: 2019,  // UrbanHQ
